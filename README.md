@@ -1,6 +1,20 @@
-# webclaw
+<p align="center">
+  <a href="https://webclaw.io">
+    <img src=".github/banner.png" alt="webclaw" width="600" />
+  </a>
+</p>
 
-TypeScript/JavaScript SDK for the [Webclaw](https://webclaw.io) web extraction API.
+<p align="center">
+  <strong>TypeScript SDK for the Webclaw web extraction API</strong>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/webclaw"><img src="https://img.shields.io/npm/v/webclaw?style=flat-square&color=212529" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/webclaw"><img src="https://img.shields.io/node/v/webclaw?style=flat-square&color=212529" alt="Node" /></a>
+  <a href="https://github.com/0xMassi/webclaw-js/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-212529?style=flat-square" alt="License" /></a>
+</p>
+
+---
 
 ## Installation
 
@@ -19,7 +33,7 @@ const result = await client.scrape({ url: "https://example.com", formats: ["mark
 console.log(result.markdown);
 ```
 
-## API Reference
+## Endpoints
 
 ### Scrape
 
@@ -35,17 +49,17 @@ const result = await client.scrape({
   no_cache: true,
 });
 
-console.log(result.url);       // string
-console.log(result.markdown);  // string | undefined
-console.log(result.text);      // string | undefined
-console.log(result.llm);       // string | undefined
-console.log(result.metadata);  // PageMetadata
-console.log(result.cache);     // { status: "hit" | "miss" | "bypass" }
+result.url       // string
+result.markdown  // string | undefined
+result.text      // string | undefined
+result.llm       // string | undefined
+result.metadata  // PageMetadata
+result.cache     // { status: "hit" | "miss" | "bypass" }
 ```
 
 ### Crawl
 
-Start an async crawl job and poll for results.
+Start an async crawl and poll for results.
 
 ```typescript
 const job = await client.crawl({
@@ -55,10 +69,9 @@ const job = await client.crawl({
   use_sitemap: true,
 });
 
-// Poll until complete
 const status = await job.waitForCompletion({
-  interval: 2_000,   // ms, default 2s
-  maxWait: 300_000,  // ms, default 5min
+  interval: 2_000,   // ms
+  maxWait: 300_000,  // ms
 });
 
 for (const page of status.pages) {
@@ -68,7 +81,7 @@ for (const page of status.pages) {
 
 ### Map
 
-Discover URLs via sitemap parsing.
+Discover URLs via sitemap.
 
 ```typescript
 const result = await client.map({ url: "https://example.com" });
@@ -88,11 +101,8 @@ const result = await client.batch({
 });
 
 for (const item of result.results) {
-  if ("error" in item) {
-    console.error(item.url, item.error);
-  } else {
-    console.log(item.url, item.markdown?.length);
-  }
+  if ("error" in item) console.error(item.url, item.error);
+  else console.log(item.url, item.markdown?.length);
 }
 ```
 
@@ -104,14 +114,8 @@ LLM-powered structured data extraction.
 // Schema-based
 const result = await client.extract({
   url: "https://example.com/pricing",
-  schema: {
-    type: "object",
-    properties: {
-      plans: { type: "array", items: { type: "object" } },
-    },
-  },
+  schema: { type: "object", properties: { plans: { type: "array" } } },
 });
-console.log(result.data);
 
 // Prompt-based
 const result2 = await client.extract({
@@ -123,10 +127,7 @@ const result2 = await client.extract({
 ### Summarize
 
 ```typescript
-const result = await client.summarize({
-  url: "https://example.com",
-  max_sentences: 3,
-});
+const result = await client.summarize({ url: "https://example.com", max_sentences: 3 });
 console.log(result.summary);
 ```
 
@@ -153,10 +154,8 @@ import {
 try {
   await client.scrape({ url: "https://example.com" });
 } catch (err) {
-  if (err instanceof AuthenticationError) {
-    console.error("Invalid API key");
-  } else if (err instanceof RateLimitError) {
-    console.error("Rate limited, retry after:", err.retryAfter, "seconds");
+  if (err instanceof RateLimitError) {
+    console.error("Rate limited, retry after:", err.retryAfter, "s");
   } else if (err instanceof WebclawError) {
     console.error("API error:", err.message, err.statusCode);
   }
@@ -173,10 +172,12 @@ const client = new Webclaw({
 });
 ```
 
-## Requirements
+## Highlights
 
-- Node.js 18+ (uses native `fetch`)
-- Zero runtime dependencies
+- Zero runtime dependencies — uses native `fetch`
+- ESM + CJS dual output via tsup
+- Full TypeScript types for every request and response
+- Node.js 18+
 
 ## License
 
