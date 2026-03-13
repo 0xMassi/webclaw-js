@@ -1,0 +1,183 @@
+# webclaw
+
+TypeScript/JavaScript SDK for the [Webclaw](https://webclaw.io) web extraction API.
+
+## Installation
+
+```bash
+npm install webclaw
+```
+
+## Quick Start
+
+```typescript
+import { Webclaw } from "webclaw";
+
+const client = new Webclaw({ apiKey: "wc_your_api_key" });
+
+const result = await client.scrape({ url: "https://example.com", formats: ["markdown"] });
+console.log(result.markdown);
+```
+
+## API Reference
+
+### Scrape
+
+Extract content from a single URL.
+
+```typescript
+const result = await client.scrape({
+  url: "https://example.com",
+  formats: ["markdown", "text", "llm"],
+  include_selectors: ["article", ".content"],
+  exclude_selectors: ["nav", "footer"],
+  only_main_content: true,
+  no_cache: true,
+});
+
+console.log(result.url);       // string
+console.log(result.markdown);  // string | undefined
+console.log(result.text);      // string | undefined
+console.log(result.llm);       // string | undefined
+console.log(result.metadata);  // PageMetadata
+console.log(result.cache);     // { status: "hit" | "miss" | "bypass" }
+```
+
+### Crawl
+
+Start an async crawl job and poll for results.
+
+```typescript
+const job = await client.crawl({
+  url: "https://example.com",
+  max_depth: 3,
+  max_pages: 100,
+  use_sitemap: true,
+});
+
+// Poll until complete
+const status = await job.waitForCompletion({
+  interval: 2_000,   // ms, default 2s
+  maxWait: 300_000,  // ms, default 5min
+});
+
+for (const page of status.pages) {
+  console.log(page.url, page.markdown?.length);
+}
+```
+
+### Map
+
+Discover URLs via sitemap parsing.
+
+```typescript
+const result = await client.map({ url: "https://example.com" });
+console.log(result.count);
+result.urls.forEach((url) => console.log(url));
+```
+
+### Batch
+
+Scrape multiple URLs in parallel.
+
+```typescript
+const result = await client.batch({
+  urls: ["https://a.com", "https://b.com", "https://c.com"],
+  formats: ["markdown"],
+  concurrency: 5,
+});
+
+for (const item of result.results) {
+  if ("error" in item) {
+    console.error(item.url, item.error);
+  } else {
+    console.log(item.url, item.markdown?.length);
+  }
+}
+```
+
+### Extract
+
+LLM-powered structured data extraction.
+
+```typescript
+// Schema-based
+const result = await client.extract({
+  url: "https://example.com/pricing",
+  schema: {
+    type: "object",
+    properties: {
+      plans: { type: "array", items: { type: "object" } },
+    },
+  },
+});
+console.log(result.data);
+
+// Prompt-based
+const result2 = await client.extract({
+  url: "https://example.com",
+  prompt: "Extract all pricing tiers with names and prices",
+});
+```
+
+### Summarize
+
+```typescript
+const result = await client.summarize({
+  url: "https://example.com",
+  max_sentences: 3,
+});
+console.log(result.summary);
+```
+
+### Brand
+
+Extract brand identity (colors, fonts, logos).
+
+```typescript
+const result = await client.brand({ url: "https://example.com" });
+console.log(result);
+```
+
+## Error Handling
+
+```typescript
+import {
+  WebclawError,
+  AuthenticationError,
+  NotFoundError,
+  RateLimitError,
+  TimeoutError,
+} from "webclaw";
+
+try {
+  await client.scrape({ url: "https://example.com" });
+} catch (err) {
+  if (err instanceof AuthenticationError) {
+    console.error("Invalid API key");
+  } else if (err instanceof RateLimitError) {
+    console.error("Rate limited, retry after:", err.retryAfter, "seconds");
+  } else if (err instanceof WebclawError) {
+    console.error("API error:", err.message, err.statusCode);
+  }
+}
+```
+
+## Configuration
+
+```typescript
+const client = new Webclaw({
+  apiKey: "wc_your_api_key",
+  baseUrl: "https://api.webclaw.io", // default
+  timeout: 60_000,                    // ms, default 30_000
+});
+```
+
+## Requirements
+
+- Node.js 18+ (uses native `fetch`)
+- Zero runtime dependencies
+
+## License
+
+MIT
