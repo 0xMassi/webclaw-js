@@ -1,5 +1,5 @@
 {
-  "name": "webclaw",
+  "name": "@webclaw/sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for the Webclaw web extraction API",
   "main": "./dist/index.js",

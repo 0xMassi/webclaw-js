@@ -139,6 +139,58 @@ export interface BrandResponse {
   [key: string]: unknown;
 }
 
+// -- POST /v1/search --
+
+export interface SearchRequest {
+  query: string;
+  num_results?: number;
+  scrape?: boolean;
+  formats?: string[];
+  country?: string;
+  lang?: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    position: number;
+    markdown?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  scrape: boolean;
+}
+
+// -- POST /v1/diff --
+
+export interface DiffRequest {
+  url: string;
+  previous?: Record<string, unknown>;
+}
+
+export interface DiffResponse {
+  url: string;
+  changes: Record<string, unknown>;
+}
+
+// -- POST /v1/agent-scrape --
+
+export interface AgentScrapeRequest {
+  url: string;
+  goal: string;
+  max_steps?: number;
+}
+
+export interface AgentScrapeResponse {
+  data: Record<string, unknown>;
+  steps: Array<{ step: number; action: string | Record<string, unknown> }>;
+  url: string;
+  total_steps: number;
+  warning?: string;
+}
+
 // -- Client config --
 
 export interface WebclawConfig {

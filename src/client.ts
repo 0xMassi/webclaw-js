@@ -11,6 +11,8 @@ import {
   WebclawError,
 } from "./errors.js";
 import type {
+  AgentScrapeRequest,
+  AgentScrapeResponse,
   BatchRequest,
   BatchResponse,
   BrandRequest,
@@ -19,12 +21,16 @@ import type {
   CrawlRequest,
   CrawlStartResponse,
   CrawlStatusResponse,
+  DiffRequest,
+  DiffResponse,
   ExtractRequest,
   ExtractResponse,
   MapRequest,
   MapResponse,
   ScrapeRequest,
   ScrapeResponse,
+  SearchRequest,
+  SearchResponse,
   SummarizeRequest,
   SummarizeResponse,
   WebclawConfig,
@@ -78,6 +84,18 @@ export class Webclaw {
 
   async brand(params: BrandRequest): Promise<BrandResponse> {
     return this.post<BrandResponse>("/v1/brand", params);
+  }
+
+  async search(params: SearchRequest): Promise<SearchResponse> {
+    return this.post<SearchResponse>("/v1/search", params);
+  }
+
+  async diff(params: DiffRequest): Promise<DiffResponse> {
+    return this.post<DiffResponse>("/v1/diff", params);
+  }
+
+  async agentScrape(params: AgentScrapeRequest): Promise<AgentScrapeResponse> {
+    return this.post<AgentScrapeResponse>("/v1/agent-scrape", params);
   }
 
   // -- Internal HTTP layer --
