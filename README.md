@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/webclaw"><img src="https://img.shields.io/npm/v/webclaw?style=flat-square&color=212529" alt="npm" /></a>
-  <a href="https://www.npmjs.com/package/webclaw"><img src="https://img.shields.io/node/v/webclaw?style=flat-square&color=212529" alt="Node" /></a>
+  <a href="https://www.npmjs.com/package/@webclaw/sdk"><img src="https://img.shields.io/npm/v/@webclaw/sdk?style=flat-square&color=212529" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/@webclaw/sdk"><img src="https://img.shields.io/node/v/@webclaw/sdk?style=flat-square&color=212529" alt="Node" /></a>
   <a href="https://github.com/0xMassi/webclaw-js/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-212529?style=flat-square" alt="License" /></a>
 </p>
 
@@ -19,13 +19,13 @@
 ## Installation
 
 ```bash
-npm install webclaw
+npm install @webclaw/sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { Webclaw } from "webclaw";
+import { Webclaw } from "@webclaw/sdk";
 
 const client = new Webclaw({ apiKey: "wc_your_api_key" });
 
@@ -140,6 +140,47 @@ const result = await client.brand({ url: "https://example.com" });
 console.log(result);
 ```
 
+### Search
+
+Web search + parallel scrape of results.
+
+```typescript
+const result = await client.search({
+  query: "best rust web frameworks",
+  num_results: 5,
+  scrape: true,
+  formats: ["markdown"],
+});
+
+for (const r of result.results) {
+  console.log(r.title, r.url, r.markdown?.length);
+}
+```
+
+### Diff
+
+Content change detection.
+
+```typescript
+const result = await client.diff({ url: "https://example.com" });
+console.log(result.changes);
+```
+
+### Agent Scrape
+
+AI-powered agentic extraction — give a goal, get structured data.
+
+```typescript
+const result = await client.agentScrape({
+  url: "https://example.com/pricing",
+  goal: "Extract all pricing tiers with names and prices",
+  max_steps: 5,
+});
+
+console.log(result.data);
+console.log(`Completed in ${result.total_steps} steps`);
+```
+
 ## Error Handling
 
 ```typescript
@@ -149,7 +190,7 @@ import {
   NotFoundError,
   RateLimitError,
   TimeoutError,
-} from "webclaw";
+} from "@webclaw/sdk";
 
 try {
   await client.scrape({ url: "https://example.com" });
