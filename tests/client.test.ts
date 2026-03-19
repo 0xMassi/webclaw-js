@@ -238,7 +238,7 @@ describe("crawl", () => {
 
     await expect(
       job.waitForCompletion({ interval: 10, maxWait: 50 }),
-    ).rejects.toThrow("Crawl polling timed out");
+    ).rejects.toThrow("Polling timed out");
   });
 });
 

@@ -59,51 +59,109 @@ export class Webclaw {
 
   // -- Public API methods --
 
+  /**
+   * Scrape a single URL and extract its content.
+   * @param params - URL and extraction options (formats, selectors, caching).
+   * @returns Extracted content in the requested formats.
+   * @throws {WebclawError} On network or API errors.
+   */
   async scrape(params: ScrapeRequest): Promise<ScrapeResponse> {
     if (!params.url) throw new Error("url is required");
     return this.post<ScrapeResponse>("/v1/scrape", params);
   }
 
+  /**
+   * Start an async crawl job that discovers and scrapes pages from a root URL.
+   * @param params - Root URL and crawl limits (depth, max pages).
+   * @returns A CrawlJob handle for polling or waiting.
+   * @throws {WebclawError} On network or API errors.
+   */
   async crawl(params: CrawlRequest): Promise<CrawlJob> {
     const res = await this.post<CrawlStartResponse>("/v1/crawl", params);
     return new CrawlJob(res.id, this);
   }
 
+  /**
+   * Get the current status and partial results of a crawl job.
+   * @param id - Crawl job ID returned by {@link crawl}.
+   * @returns Current status, page count, and any completed pages.
+   * @throws {NotFoundError} If the crawl job does not exist.
+   */
   async getCrawlStatus(id: string): Promise<CrawlStatusResponse> {
     return this.get<CrawlStatusResponse>(`/v1/crawl/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * Discover URLs from a site's sitemap.
+   * @param params - The root URL to map.
+   * @returns List of discovered URLs and total count.
+   */
   async map(params: MapRequest): Promise<MapResponse> {
     return this.post<MapResponse>("/v1/map", params);
   }
 
+  /**
+   * Scrape multiple URLs in parallel.
+   * @param params - Array of URLs, optional formats and concurrency limit.
+   * @returns Results for each URL (success or per-URL error).
+   */
   async batch(params: BatchRequest): Promise<BatchResponse> {
     if (!params.urls?.length) throw new Error("urls must be a non-empty array");
     return this.post<BatchResponse>("/v1/batch", params);
   }
 
+  /**
+   * Extract structured data from a page using an LLM.
+   * @param params - URL plus a JSON schema or natural-language prompt.
+   * @returns Extracted data matching the requested schema.
+   */
   async extract(params: ExtractRequest): Promise<ExtractResponse> {
     if (!params.url) throw new Error("url is required");
     return this.post<ExtractResponse>("/v1/extract", params);
   }
 
+  /**
+   * Generate a concise summary of a page's content.
+   * @param params - URL and optional max sentence count.
+   * @returns The generated summary text.
+   */
   async summarize(params: SummarizeRequest): Promise<SummarizeResponse> {
     return this.post<SummarizeResponse>("/v1/summarize", params);
   }
 
+  /**
+   * Extract brand identity information (name, logo, colors) from a URL.
+   * @param params - The URL to analyze.
+   * @returns Brand data as a flexible object (shape depends on the site).
+   */
   async brand(params: BrandRequest): Promise<BrandResponse> {
     return this.post<BrandResponse>("/v1/brand", params);
   }
 
+  /**
+   * Perform a web search query, optionally scraping each result page.
+   * @param params - Search query, result count, and optional scrape/format options.
+   * @returns Search results with optional scraped content per hit.
+   */
   async search(params: SearchRequest): Promise<SearchResponse> {
     if (!params.query) throw new Error("query is required");
     return this.post<SearchResponse>("/v1/search", params);
   }
 
+  /**
+   * Detect content changes on a page since a previous snapshot.
+   * @param params - URL and optional previous state to diff against.
+   * @returns Detected changes between the two states.
+   */
   async diff(params: DiffRequest): Promise<DiffResponse> {
     return this.post<DiffResponse>("/v1/diff", params);
   }
 
+  /**
+   * Run an AI-guided scrape that navigates a page to achieve a goal.
+   * @param params - URL, natural-language goal, and optional step limit.
+   * @returns Extracted data, the steps taken, and any warnings.
+   */
   async agentScrape(params: AgentScrapeRequest): Promise<AgentScrapeResponse> {
     return this.post<AgentScrapeResponse>("/v1/agent-scrape", params);
   }
@@ -111,6 +169,10 @@ export class Webclaw {
   /**
    * Start a research job and poll until completion.
    * Deep research uses a 20-minute timeout by default; normal uses 10 minutes.
+   * @param params - Research query and depth options.
+   * @param opts - Polling interval and max wait override.
+   * @returns Completed research report, sources, and findings.
+   * @throws {WebclawError} If polling times out before the job finishes.
    */
   async research(
     params: ResearchRequest,
@@ -125,25 +187,20 @@ export class Webclaw {
     const interval = opts.interval ?? 2_000;
     const defaultMax = params.deep ? 1_200_000 : 600_000;
     const maxWait = opts.maxWait ?? defaultMax;
-    const deadline = Date.now() + maxWait;
 
-    while (Date.now() < deadline) {
-      const status = await this.getResearchStatus(start.id);
-      if (status.status === "completed" || status.status === "failed") {
-        return status;
-      }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      await sleep(Math.min(interval, remaining));
-    }
-
-    throw new WebclawError("Research polling timed out", undefined, {
-      id: start.id,
-      maxWait,
-    });
+    return pollUntilDone(
+      () => this.getResearchStatus(start.id),
+      (r) => r.status === "completed" || r.status === "failed",
+      { interval, timeout: maxWait },
+    );
   }
 
-  /** Low-level poll: get current status of a research job without waiting. */
+  /**
+   * Get the current status of a research job without waiting.
+   * @param id - Research job ID returned when starting research.
+   * @returns Current status and any partial/complete results.
+   * @throws {NotFoundError} If the research job does not exist.
+   */
   async getResearchStatus(id: string): Promise<ResearchResponse> {
     return this.get<ResearchResponse>(`/v1/research/${encodeURIComponent(id)}`);
   }
@@ -189,11 +246,7 @@ export class Webclaw {
     try {
       res = await fetch(url, { ...init, signal: controller.signal });
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new TimeoutError(this.timeout);
-      }
-      // Node 18 throws a plain Error with name "AbortError" on timeout
-      if (err instanceof Error && err.name === "AbortError") {
+      if (isAbortError(err)) {
         throw new TimeoutError(this.timeout);
       }
       throw new WebclawError(
@@ -280,26 +333,39 @@ export class CrawlJob {
   ): Promise<CrawlStatusResponse> {
     const interval = opts.interval ?? 2_000;
     const maxWait = opts.maxWait ?? 300_000;
-    const deadline = Date.now() + maxWait;
 
-    while (Date.now() < deadline) {
-      const status = await this.getStatus();
-      if (status.status === "completed" || status.status === "failed") {
-        return status;
-      }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      await sleep(Math.min(interval, remaining));
-    }
-
-    throw new WebclawError("Crawl polling timed out", undefined, {
-      id: this.id,
-      maxWait,
-    });
+    return pollUntilDone(
+      () => this.getStatus(),
+      (s) => s.status === "completed" || s.status === "failed",
+      { interval, timeout: maxWait },
+    );
   }
 }
 
 // -- Helpers --
+
+/** Polls checkFn until isDone returns true, or timeout is exceeded. */
+async function pollUntilDone<T>(
+  checkFn: () => Promise<T>,
+  isDone: (result: T) => boolean,
+  options: { interval: number; timeout: number },
+): Promise<T> {
+  const deadline = Date.now() + options.timeout;
+  while (true) {
+    const result = await checkFn();
+    if (isDone(result)) return result;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new WebclawError("Polling timed out");
+    await sleep(Math.min(options.interval, remaining));
+  }
+}
+
+/** Detect abort errors across runtimes (browser DOMException vs Node 18 plain Error). */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  return false;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
