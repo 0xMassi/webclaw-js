@@ -27,15 +27,18 @@ import type {
   ExtractResponse,
   MapRequest,
   MapResponse,
+  ResearchPollOptions,
   ResearchRequest,
+  ResearchResponse,
   ResearchStartResponse,
-  ResearchStatusResponse,
   ScrapeRequest,
   ScrapeResponse,
   SearchRequest,
   SearchResponse,
   SummarizeRequest,
   SummarizeResponse,
+  WatchCreateRequest,
+  WatchResponse,
   WebclawConfig,
 } from "./types.js";
 
@@ -105,13 +108,73 @@ export class Webclaw {
     return this.post<AgentScrapeResponse>("/v1/agent-scrape", params);
   }
 
-  async research(params: ResearchRequest): Promise<ResearchStartResponse> {
-    return this.post<ResearchStartResponse>("/v1/research", params);
+  /**
+   * Start a research job and poll until completion.
+   * Deep research uses a 20-minute timeout by default; normal uses 10 minutes.
+   */
+  async research(
+    params: ResearchRequest,
+    opts: ResearchPollOptions = {},
+  ): Promise<ResearchResponse> {
+    if (!params.query) throw new Error("query is required");
+    const start = await this.post<ResearchStartResponse>(
+      "/v1/research",
+      params,
+    );
+
+    const interval = opts.interval ?? 2_000;
+    const defaultMax = params.deep ? 1_200_000 : 600_000;
+    const maxWait = opts.maxWait ?? defaultMax;
+    const deadline = Date.now() + maxWait;
+
+    while (Date.now() < deadline) {
+      const status = await this.getResearchStatus(start.id);
+      if (status.status === "completed" || status.status === "failed") {
+        return status;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(interval, remaining));
+    }
+
+    throw new WebclawError("Research polling timed out", undefined, {
+      id: start.id,
+      maxWait,
+    });
   }
 
-  async getResearchStatus(id: string): Promise<ResearchStatusResponse> {
-    return this.get<ResearchStatusResponse>(
-      `/v1/research/${encodeURIComponent(id)}`,
+  /** Low-level poll: get current status of a research job without waiting. */
+  async getResearchStatus(id: string): Promise<ResearchResponse> {
+    return this.get<ResearchResponse>(`/v1/research/${encodeURIComponent(id)}`);
+  }
+
+  // -- Watch methods --
+
+  async watchCreate(params: WatchCreateRequest): Promise<WatchResponse> {
+    if (!params.url) throw new Error("url is required");
+    return this.post<WatchResponse>("/v1/watch", params);
+  }
+
+  async watchList(limit?: number, offset?: number): Promise<WatchResponse[]> {
+    const query = new URLSearchParams();
+    if (limit !== undefined) query.set("limit", String(limit));
+    if (offset !== undefined) query.set("offset", String(offset));
+    const qs = query.toString();
+    return this.get<WatchResponse[]>(`/v1/watch${qs ? `?${qs}` : ""}`);
+  }
+
+  async watchGet(id: string): Promise<WatchResponse> {
+    return this.get<WatchResponse>(`/v1/watch/${encodeURIComponent(id)}`);
+  }
+
+  async watchDelete(id: string): Promise<void> {
+    await this.del(`/v1/watch/${encodeURIComponent(id)}`);
+  }
+
+  async watchCheck(id: string): Promise<WatchResponse> {
+    return this.post<WatchResponse>(
+      `/v1/watch/${encodeURIComponent(id)}/check`,
+      {},
     );
   }
 
@@ -138,6 +201,11 @@ export class Webclaw {
       );
     } finally {
       clearTimeout(timer);
+    }
+
+    // DELETE with 204 has no body
+    if (res.ok && res.status === 204) {
+      return undefined as T;
     }
 
     if (res.ok) {
@@ -181,6 +249,13 @@ export class Webclaw {
   private get<T>(path: string): Promise<T> {
     return this.request<T>(path, {
       method: "GET",
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+  }
+
+  private del(path: string): Promise<void> {
+    return this.request<void>(path, {
+      method: "DELETE",
       headers: { Authorization: `Bearer ${this.apiKey}` },
     });
   }
