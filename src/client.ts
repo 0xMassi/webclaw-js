@@ -27,6 +27,9 @@ import type {
   ExtractResponse,
   MapRequest,
   MapResponse,
+  ResearchRequest,
+  ResearchStartResponse,
+  ResearchStatusResponse,
   ScrapeRequest,
   ScrapeResponse,
   SearchRequest,
@@ -54,6 +57,7 @@ export class Webclaw {
   // -- Public API methods --
 
   async scrape(params: ScrapeRequest): Promise<ScrapeResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<ScrapeResponse>("/v1/scrape", params);
   }
 
@@ -71,10 +75,12 @@ export class Webclaw {
   }
 
   async batch(params: BatchRequest): Promise<BatchResponse> {
+    if (!params.urls?.length) throw new Error("urls must be a non-empty array");
     return this.post<BatchResponse>("/v1/batch", params);
   }
 
   async extract(params: ExtractRequest): Promise<ExtractResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<ExtractResponse>("/v1/extract", params);
   }
 
@@ -87,6 +93,7 @@ export class Webclaw {
   }
 
   async search(params: SearchRequest): Promise<SearchResponse> {
+    if (!params.query) throw new Error("query is required");
     return this.post<SearchResponse>("/v1/search", params);
   }
 
@@ -96,6 +103,16 @@ export class Webclaw {
 
   async agentScrape(params: AgentScrapeRequest): Promise<AgentScrapeResponse> {
     return this.post<AgentScrapeResponse>("/v1/agent-scrape", params);
+  }
+
+  async research(params: ResearchRequest): Promise<ResearchStartResponse> {
+    return this.post<ResearchStartResponse>("/v1/research", params);
+  }
+
+  async getResearchStatus(id: string): Promise<ResearchStatusResponse> {
+    return this.get<ResearchStatusResponse>(
+      `/v1/research/${encodeURIComponent(id)}`,
+    );
   }
 
   // -- Internal HTTP layer --
@@ -123,7 +140,13 @@ export class Webclaw {
       clearTimeout(timer);
     }
 
-    if (res.ok) return (await res.json()) as T;
+    if (res.ok) {
+      try {
+        return (await res.json()) as T;
+      } catch {
+        throw new WebclawError("Invalid JSON in response body", res.status);
+      }
+    }
 
     const body = await res.text().catch(() => null);
     const parsed = tryParseJson(body);

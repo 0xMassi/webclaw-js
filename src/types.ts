@@ -191,6 +191,44 @@ export interface AgentScrapeResponse {
   warning?: string;
 }
 
+// -- POST /v1/research --
+
+export interface ResearchRequest {
+  query: string;
+  maxIterations?: number;
+  maxSources?: number;
+  topic?: string;
+  deep?: boolean;
+}
+
+export interface ResearchStartResponse {
+  id: string;
+  status: string;
+}
+
+export interface ResearchFinding {
+  claim: string;
+  source: string;
+  relevance: number;
+}
+
+export interface ResearchSource {
+  url: string;
+  title: string;
+  summary: string;
+}
+
+export interface ResearchStatusResponse {
+  id: string;
+  status: string;
+  query: string;
+  report?: string;
+  sources?: ResearchSource[];
+  findings?: ResearchFinding[];
+  iterations?: number;
+  elapsed_ms?: number;
+}
+
 // -- Client config --
 
 export interface WebclawConfig {

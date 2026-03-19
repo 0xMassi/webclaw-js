@@ -168,7 +168,7 @@ console.log(result.changes);
 
 ### Agent Scrape
 
-AI-powered agentic extraction — give a goal, get structured data.
+AI-powered agentic extraction -- give a goal, get structured data.
 
 ```typescript
 const result = await client.agentScrape({
@@ -198,7 +198,7 @@ try {
   if (err instanceof RateLimitError) {
     console.error("Rate limited, retry after:", err.retryAfter, "s");
   } else if (err instanceof WebclawError) {
-    console.error("API error:", err.message, err.statusCode);
+    console.error("API error:", err.message, err.status);
   }
 }
 ```
@@ -215,7 +215,7 @@ const client = new Webclaw({
 
 ## Highlights
 
-- Zero runtime dependencies — uses native `fetch`
+- Zero runtime dependencies -- uses native `fetch`
 - ESM + CJS dual output via tsup
 - Full TypeScript types for every request and response
 - Node.js 18+
