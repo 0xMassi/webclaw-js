@@ -145,16 +145,29 @@ console.log(result);
 Web search + parallel scrape of results.
 
 ```typescript
-const result = await client.search({
-  query: "best rust web frameworks",
-  num_results: 5,
-  scrape: true,
-  formats: ["markdown"],
-});
-
-for (const r of result.results) {
-  console.log(r.title, r.url, r.markdown?.length);
+const results = await client.search({ query: "web scraping tools 2026" });
+for (const r of results.results) {
+  console.log(r.title, r.url);
 }
+```
+
+### Research
+
+Start an async deep research job and poll for results.
+
+```typescript
+// Start a research job
+const job = await client.research({
+  query: "How do modern web crawlers handle JavaScript rendering?",
+  maxSources: 15,
+  deep: true,
+});
+console.log("Job started:", job.id);
+
+// Poll for results
+const result = await client.getResearchStatus(job.id);
+console.log(result.report);
+console.log("Sources:", result.sources.length);
 ```
 
 ### Diff
