@@ -16,6 +16,10 @@
 
 ---
 
+> **Note**: The webclaw Cloud API is currently in closed beta. [Request early access](https://webclaw.io) or use the [open-source CLI/MCP](https://github.com/0xMassi/webclaw) for local extraction.
+
+---
+
 ## Installation
 
 ```bash
