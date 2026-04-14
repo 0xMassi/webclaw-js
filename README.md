@@ -39,7 +39,7 @@ bun add @webclaw/sdk
 ```typescript
 import { Webclaw } from "@webclaw/sdk";
 
-const client = new Webclaw({ apiKey: "fc-YOUR_API_KEY" });
+const client = new Webclaw({ apiKey: "wc-YOUR_API_KEY" });
 
 const result = await client.scrape({ url: "https://example.com", formats: ["markdown"] });
 console.log(result.markdown);
