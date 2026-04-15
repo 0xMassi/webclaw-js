@@ -11,8 +11,6 @@ import {
   WebclawError,
 } from "./errors.js";
 import type {
-  AgentScrapeRequest,
-  AgentScrapeResponse,
   BatchRequest,
   BatchResponse,
   BrandRequest,
@@ -155,15 +153,6 @@ export class Webclaw {
    */
   async diff(params: DiffRequest): Promise<DiffResponse> {
     return this.post<DiffResponse>("/v1/diff", params);
-  }
-
-  /**
-   * Run an AI-guided scrape that navigates a page to achieve a goal.
-   * @param params - URL, natural-language goal, and optional step limit.
-   * @returns Extracted data, the steps taken, and any warnings.
-   */
-  async agentScrape(params: AgentScrapeRequest): Promise<AgentScrapeResponse> {
-    return this.post<AgentScrapeResponse>("/v1/agent-scrape", params);
   }
 
   /**

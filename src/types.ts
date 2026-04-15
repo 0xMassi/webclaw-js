@@ -176,22 +176,6 @@ export interface DiffResponse {
   changes: Record<string, unknown>;
 }
 
-// -- POST /v1/agent-scrape --
-
-export interface AgentScrapeRequest {
-  url: string;
-  goal: string;
-  max_steps?: number;
-}
-
-export interface AgentScrapeResponse {
-  data: Record<string, unknown>;
-  steps: Array<{ step: number; action: string | Record<string, unknown> }>;
-  url: string;
-  total_steps: number;
-  warning?: string;
-}
-
 // -- POST /v1/research --
 
 export interface ResearchRequest {
