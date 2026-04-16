@@ -185,6 +185,49 @@ export class Webclaw {
   }
 
   /**
+   * Poll a research job by id until it's `completed` or `failed`.
+   * Mirrors the ergonomics of `sdk-go.WaitForResearch` for callers who
+   * already have an id (e.g. persisted from an earlier `/v1/research`
+   * call on another process) and want to block-until-done without
+   * restarting the job via {@link research}.
+   *
+   * @throws {WebclawError} If polling times out before the job finishes.
+   */
+  async waitForResearch(
+    id: string,
+    opts: ResearchPollOptions = {},
+  ): Promise<ResearchResponse> {
+    const interval = opts.interval ?? 2_000;
+    // No `deep` hint here since we don't have the original request;
+    // pick the longer window so shallow jobs finish comfortably.
+    const maxWait = opts.maxWait ?? 1_200_000;
+    return pollUntilDone(
+      () => this.getResearchStatus(id),
+      (r) => r.status === "completed" || r.status === "failed",
+      { interval, timeout: maxWait },
+    );
+  }
+
+  /**
+   * Poll a crawl job by id until it's `completed` or `failed`.
+   * Same semantics as {@link CrawlJob#waitForCompletion} but for callers
+   * who have only the id (e.g. persisted or returned from another process).
+   * Mirrors `sdk-go.WaitForCompletion`.
+   */
+  async waitForCrawl(
+    id: string,
+    opts: CrawlPollOptions = {},
+  ): Promise<CrawlStatusResponse> {
+    const interval = opts.interval ?? 2_000;
+    const maxWait = opts.maxWait ?? 300_000;
+    return pollUntilDone(
+      () => this.getCrawlStatus(id),
+      (s) => s.status === "completed" || s.status === "failed",
+      { interval, timeout: maxWait },
+    );
+  }
+
+  /**
    * Get the current status of a research job without waiting.
    * @param id - Research job ID returned when starting research.
    * @returns Current status and any partial/complete results.
