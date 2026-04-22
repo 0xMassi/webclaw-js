@@ -38,6 +38,8 @@ import type {
   WatchCreateRequest,
   WatchResponse,
   WebclawConfig,
+  ListExtractorsResponse,
+  VerticalScrapeResponse,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://api.webclaw.io";
@@ -264,6 +266,49 @@ export class Webclaw {
     return this.post<WatchResponse>(
       `/v1/watch/${encodeURIComponent(id)}/check`,
       {},
+    );
+  }
+
+  // -- Vertical extractor methods --
+
+  /**
+   * List all vertical extractors available on the server. Returns the
+   * catalog as `{extractors: [{name, label, description, url_patterns}]}`.
+   * Useful for building UIs that let users pick an extractor by name.
+   *
+   * Extractors return typed JSON specific to the target site (title,
+   * price, stars, rating, etc.) rather than generic markdown.
+   * See {@link scrapeVertical} to run one.
+   */
+  async listExtractors(): Promise<ListExtractorsResponse> {
+    return this.get<ListExtractorsResponse>("/v1/extractors");
+  }
+
+  /**
+   * Run a specific vertical extractor by name.
+   *
+   * The server picks the parser from the `name` path parameter and
+   * runs it on `url`. The response envelope is
+   * `{vertical, url, data}` where `data` is an extractor-specific
+   * JSON object (its fields vary per site).
+   *
+   * @param name - Vertical extractor name. Call {@link listExtractors}
+   *   to discover names. Examples: "reddit", "github_repo",
+   *   "trustpilot_reviews", "youtube_video", "shopify_product".
+   * @param url - URL to extract. Must match the URL patterns the
+   *   extractor claims, or the server returns a 400.
+   * @throws {WebclawError} On URL mismatch, unknown vertical, or
+   *   upstream fetch failure.
+   */
+  async scrapeVertical(
+    name: string,
+    url: string,
+  ): Promise<VerticalScrapeResponse> {
+    if (!name) throw new Error("name is required");
+    if (!url) throw new Error("url is required");
+    return this.post<VerticalScrapeResponse>(
+      `/v1/scrape/${encodeURIComponent(name)}`,
+      { url },
     );
   }
 

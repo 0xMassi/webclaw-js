@@ -276,3 +276,39 @@ export interface ResearchPollOptions {
   /** Maximum time to wait in ms. Default 600_000 (10 min), 1_200_000 for deep. */
   maxWait?: number;
 }
+
+// -- Vertical extractor types --
+
+/** One catalog entry from `GET /v1/extractors`. */
+export interface ExtractorInfo {
+  /** URL-safe identifier, e.g. "reddit", "github_repo". */
+  name: string;
+  /** Human-friendly display label, e.g. "Reddit thread". */
+  label: string;
+  /** One-line description of what the extractor returns. */
+  description: string;
+  /** Glob-ish URL patterns the extractor claims (for documentation). */
+  url_patterns: string[];
+}
+
+/** Response shape of `GET /v1/extractors`. */
+export interface ListExtractorsResponse {
+  extractors: ExtractorInfo[];
+}
+
+/**
+ * Response shape of `POST /v1/scrape/{vertical}`.
+ *
+ * `data` is extractor-specific: the fields depend on which vertical
+ * ran. Narrow to your own type at the call site rather than shipping
+ * 28 exhaustive definitions. Keeps the SDK current with the server
+ * as new extractors land without requiring a new SDK release.
+ */
+export interface VerticalScrapeResponse {
+  /** The extractor name that ran. */
+  vertical: string;
+  /** The URL that was requested. */
+  url: string;
+  /** Extractor-specific typed JSON. Shape depends on `vertical`. */
+  data: Record<string, unknown>;
+}
