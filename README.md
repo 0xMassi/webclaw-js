@@ -71,6 +71,32 @@ result.cache     // { status: "hit" | "miss" | "bypass" }
 result.warning   // string | undefined
 ```
 
+### Vertical extractors
+
+28 site-specific extractors that return typed JSON (GitHub, Reddit, Amazon, YouTube, PyPI, HuggingFace, Trustpilot, etc.) instead of generic markdown. See the [catalog](https://webclaw.io/docs/api/vertical) for the full list.
+
+```typescript
+// Discover available extractors
+const catalog = await client.listExtractors();
+catalog.extractors.forEach((e) => console.log(e.name, "-", e.label));
+
+// Run a specific extractor
+const pr = await client.scrapeVertical(
+  "github_pr",
+  "https://github.com/rust-lang/rust/pull/123456",
+);
+console.log(pr.data); // { title, state, author, commits, reviews, ... }
+
+// Amazon product as typed JSON
+const product = await client.scrapeVertical(
+  "amazon_product",
+  "https://www.amazon.com/dp/B0C6KKQ7ND",
+);
+console.log(product.data.price, product.data.rating);
+```
+
+The `data` field is extractor-specific; call `listExtractors()` to discover what each returns.
+
 ### Search
 
 Web search with optional parallel scraping of each result page.
