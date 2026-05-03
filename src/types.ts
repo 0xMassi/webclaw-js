@@ -24,6 +24,32 @@ export interface ScrapeRequest {
   no_cache?: boolean;
 }
 
+/**
+ * Structured YouTube metadata returned by `/v1/scrape` for any
+ * `youtube.com/watch`, `youtube.com/shorts`, or `youtu.be/` URL.
+ *
+ * Populated via the server's yt-dlp short-circuit (preferred) or the
+ * standard pipeline's vertical YouTube extractor (transcript will be
+ * `null` on this fallback path).
+ */
+export interface YouTubeData {
+  video_id: string | null;
+  title: string | null;
+  description: string | null;
+  channel: string | null;
+  channel_url: string | null;
+  uploader: string | null;
+  /** YYYYMMDD */
+  upload_date: string | null;
+  duration_seconds: number | null;
+  view_count: number | null;
+  like_count: number | null;
+  thumbnail: string | null;
+  tags: string[];
+  categories: string[];
+  language: string | null;
+}
+
 export interface ScrapeResponse {
   url: string;
   metadata: PageMetadata;
@@ -33,6 +59,12 @@ export interface ScrapeResponse {
   json?: unknown;
   cache: { status: "hit" | "miss" | "bypass" };
   warning?: string;
+  /** YouTube-only — set when the URL is youtube.com/watch, /shorts, or
+   *  youtu.be. Carries channel, duration, view count, tags, etc. */
+  youtube?: YouTubeData;
+  /** Auto-caption transcript text (newline-joined). Only present when
+   *  the yt-dlp short-circuit fired and the video has captions. */
+  transcript?: string;
 }
 
 // -- POST /v1/crawl --
