@@ -14,6 +14,8 @@ import type {
   BatchResponse,
   ExtractResponse,
   SummarizeResponse,
+  WatchResponse,
+  ResearchResponse,
 } from "../src/index.js";
 
 // -- Helpers --
@@ -447,5 +449,282 @@ describe("URL construction", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/crawl/id%2Fwith%2Fslashes",
     );
+  });
+});
+
+// ---- YouTube fields on /v1/scrape ----
+
+describe("scrape YouTube fields", () => {
+  it("surfaces youtube block and transcript when present", async () => {
+    const ytRes: ScrapeResponse = {
+      url: "https://youtube.com/watch?v=abc12345678",
+      metadata: { title: "Some video" },
+      cache: { status: "miss" },
+      youtube: {
+        video_id: "abc12345678",
+        title: "Some video",
+        description: "desc",
+        channel: "Chan",
+        channel_url: "https://youtube.com/@chan",
+        uploader: "Chan",
+        upload_date: "20260101",
+        duration_seconds: 123,
+        view_count: 1000,
+        like_count: 50,
+        thumbnail: "https://i.ytimg.com/x.jpg",
+        tags: ["a", "b"],
+        categories: ["Education"],
+        language: "en",
+      },
+      transcript: "line one\nline two",
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(ytRes));
+    const res = await client().scrape({
+      url: "https://youtube.com/watch?v=abc12345678",
+    });
+    expect(res.youtube?.video_id).toBe("abc12345678");
+    expect(res.youtube?.duration_seconds).toBe(123);
+    expect(res.youtube?.tags).toEqual(["a", "b"]);
+    expect(res.transcript).toBe("line one\nline two");
+  });
+
+  it("youtube/transcript are optional and may be absent", async () => {
+    const plain: ScrapeResponse = {
+      url: "https://example.com",
+      metadata: {},
+      markdown: "# x",
+      cache: { status: "miss" },
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(plain));
+    const res = await client().scrape({ url: "https://example.com" });
+    expect(res.youtube).toBeUndefined();
+    expect(res.transcript).toBeUndefined();
+  });
+});
+
+// ---- Watch endpoints ----
+
+describe("watch endpoints", () => {
+  const watch: WatchResponse = {
+    id: "watch_1",
+    url: "https://example.com",
+    name: "Page",
+    interval_minutes: 60,
+    active: true,
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("watchCreate POSTs to /v1/watch", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    const res = await client().watchCreate({
+      url: "https://example.com",
+      name: "Page",
+      interval_minutes: 60,
+    });
+    expect(res.id).toBe("watch_1");
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/watch");
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("watchCreate requires url", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().watchCreate({ name: "no url" }),
+    ).rejects.toThrow("url is required");
+  });
+
+  it("watchList builds limit/offset query string", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse([watch]));
+    const res = await client().watchList(10, 5);
+    expect(res).toHaveLength(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/watch?limit=10&offset=5",
+    );
+  });
+
+  it("watchList omits query string when no args", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse([]));
+    await client().watchList();
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/watch");
+  });
+
+  it("watchGet GETs a single watch by encoded id", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    const res = await client().watchGet("watch/1");
+    expect(res.id).toBe("watch_1");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/watch/watch%2F1",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("GET");
+  });
+
+  it("watchCheck POSTs to /v1/watch/{id}/check", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    const res = await client().watchCheck("watch_1");
+    expect(res.id).toBe("watch_1");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/watch/watch_1/check",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("watchDelete handles 204 no-body and resolves void", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const res = await client().watchDelete("watch_1");
+    expect(res).toBeUndefined();
+    expect(fetchSpy.mock.calls[0][1].method).toBe("DELETE");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/watch/watch_1",
+    );
+  });
+});
+
+// ---- Research polling ----
+
+describe("research polling", () => {
+  it("polls /v1/research/{id} until completed", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "r1", status: "running" }),
+    );
+
+    const done: ResearchResponse = {
+      id: "r1",
+      query: "q",
+      status: "completed",
+      report: "the report",
+      sources_count: 3,
+      findings_count: 2,
+    };
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ id: "r1", status: "running" }))
+      .mockResolvedValueOnce(jsonResponse(done));
+
+    const res = await client().research({ query: "q" }, { interval: 10 });
+    expect(res.status).toBe("completed");
+    expect(res.report).toBe("the report");
+    // 1 start + 2 polls
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("research returns on failed status", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "r2", status: "running" }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "r2", query: "q", status: "failed" }),
+    );
+    const res = await client().research({ query: "q" }, { interval: 10 });
+    expect(res.status).toBe("failed");
+  });
+
+  it("waitForResearch polls an existing id to completion", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "r3", query: "q", status: "completed", report: "ok" }),
+    );
+    const res = await client().waitForResearch("r3", { interval: 10 });
+    expect(res.report).toBe("ok");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/research/r3",
+    );
+  });
+});
+
+// ---- Resilient polling (per-poll timeout + 429) ----
+
+// Mimics a slow request: never resolves, only rejects when the
+// client's per-request AbortController fires (-> client TimeoutError).
+function abortableFetch(_url: string, init: RequestInit): Promise<Response> {
+  return new Promise<Response>((_, reject) => {
+    init.signal?.addEventListener("abort", () =>
+      reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+    );
+  });
+}
+
+describe("resilient polling", () => {
+  it("swallows a per-poll TimeoutError and keeps polling until done", async () => {
+    // Crawl start succeeds.
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "c1", status: "running" }),
+    );
+    // First poll times out (slow request -> client abort -> TimeoutError).
+    fetchSpy.mockImplementationOnce(abortableFetch);
+    // Second poll completes.
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        id: "c1",
+        status: "completed",
+        pages: [],
+        total: 0,
+        completed: 0,
+        errors: 0,
+      }),
+    );
+
+    const wc = client({ timeout: 30 });
+    const job = await wc.crawl({ url: "https://example.com" });
+    const res = await job.waitForCompletion({ interval: 5, maxWait: 5_000 });
+    expect(res.status).toBe("completed");
+    // start + timed-out poll + successful poll
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("swallows a transient 429 on a poll and continues", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "c2", status: "running" }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "slow down" }), {
+        status: 429,
+        headers: { "retry-after": "0" },
+      }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        id: "c2",
+        status: "completed",
+        pages: [],
+        total: 0,
+        completed: 0,
+        errors: 0,
+      }),
+    );
+
+    const job = await client().crawl({ url: "https://example.com" });
+    const res = await job.waitForCompletion({ interval: 5, maxWait: 5_000 });
+    expect(res.status).toBe("completed");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates a non-transient error (404) from a poll immediately", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "c3", status: "running" }),
+    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "gone" }, 404));
+
+    const job = await client().crawl({ url: "https://example.com" });
+    await expect(
+      job.waitForCompletion({ interval: 5, maxWait: 5_000 }),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it("gives up after too many consecutive transient failures", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "c4", status: "running" }),
+    );
+    // Every poll 429s forever.
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: "nope" }), {
+          status: 429,
+          headers: { "retry-after": "0" },
+        }),
+      ),
+    );
+
+    const job = await client().crawl({ url: "https://example.com" });
+    await expect(
+      job.waitForCompletion({ interval: 1, maxWait: 5_000 }),
+    ).rejects.toThrow(/consecutive transient errors/);
   });
 });

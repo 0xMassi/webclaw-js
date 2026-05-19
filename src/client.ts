@@ -421,20 +421,64 @@ export class CrawlJob {
 
 // -- Helpers --
 
-/** Polls checkFn until isDone returns true, or timeout is exceeded. */
+/** Max consecutive transient poll failures (per-poll timeout or 429)
+ *  tolerated before giving up. The outer deadline still bounds total
+ *  wall time; this just stops a permanently-broken endpoint from
+ *  spinning until the (possibly 20-minute) deadline. */
+const MAX_TRANSIENT_POLL_FAILURES = 5;
+
+/**
+ * Polls checkFn until isDone returns true, or the outer timeout is
+ * exceeded.
+ *
+ * A single status poll going over the per-request timeout, or a
+ * transient 429, must NOT abort a long-running job (deep research can
+ * legitimately take 20 min while each poll is sub-second). Such errors
+ * are swallowed and the loop continues until the outer deadline, with
+ * a bounded consecutive-failure cap so a persistently broken endpoint
+ * still fails fast. On 429 we honour `retry-after` (capped to the time
+ * left). Non-transient errors (404, 401, 5xx, network) propagate
+ * immediately.
+ */
 async function pollUntilDone<T>(
   checkFn: () => Promise<T>,
   isDone: (result: T) => boolean,
   options: { interval: number; timeout: number },
 ): Promise<T> {
   const deadline = Date.now() + options.timeout;
+  let transientFailures = 0;
+
   while (true) {
-    const result = await checkFn();
-    if (isDone(result)) return result;
+    let waitMs = options.interval;
+    try {
+      const result = await checkFn();
+      transientFailures = 0;
+      if (isDone(result)) return result;
+    } catch (err: unknown) {
+      if (!isTransientPollError(err)) throw err;
+      if (++transientFailures > MAX_TRANSIENT_POLL_FAILURES) {
+        throw new WebclawError(
+          `Polling failed after ${MAX_TRANSIENT_POLL_FAILURES} consecutive transient errors: ${
+            err instanceof Error ? err.message : "unknown error"
+          }`,
+        );
+      }
+      // On 429, back off for the server-advised window if present.
+      if (err instanceof RateLimitError && err.retryAfter != null) {
+        waitMs = Math.max(waitMs, err.retryAfter * 1_000);
+      }
+    }
+
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new WebclawError("Polling timed out");
-    await sleep(Math.min(options.interval, remaining));
+    await sleep(Math.min(waitMs, remaining));
   }
+}
+
+/** A per-poll timeout or a 429 is transient: the job may still finish,
+ *  so the poll loop should retry rather than abort. */
+function isTransientPollError(err: unknown): boolean {
+  return err instanceof TimeoutError || err instanceof RateLimitError;
 }
 
 /** Detect abort errors across runtimes (browser DOMException vs Node 18 plain Error). */
