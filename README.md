@@ -203,24 +203,6 @@ const result = await client.brand({ url: "https://example.com" });
 console.log(result); // { name, colors, fonts, logos, ... }
 ```
 
-### Agent Scrape
-
-AI-guided scraping. Provide a goal in natural language, and the agent navigates the page to extract the data you need.
-
-```typescript
-const result = await client.agentScrape({
-  url: "https://example.com/pricing",
-  goal: "Extract all pricing tiers with plan names, monthly prices, and feature lists",
-  max_steps: 5,
-});
-
-console.log(result.data);
-console.log(`Completed in ${result.total_steps} steps`);
-for (const step of result.steps) {
-  console.log(`Step ${step.step}:`, step.action);
-}
-```
-
 ### Research
 
 Start an async deep research job. The SDK automatically polls until the job completes.
@@ -329,6 +311,10 @@ console.log(updated.last_checked_at);
 ```typescript
 await client.watchDelete("watch_abc123");
 ```
+
+### Firecrawl v2 compatibility
+
+The API also exposes a Firecrawl-compatible surface at `/v2/scrape`, `/v2/crawl`, and `/v2/search`. These endpoints are not yet wrapped by this SDK (future work) — call them directly if you need Firecrawl drop-in compatibility today.
 
 ## Error Handling
 

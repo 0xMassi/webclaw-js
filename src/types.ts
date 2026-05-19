@@ -290,6 +290,13 @@ export interface WatchResponse {
 
 export interface WebclawConfig {
   apiKey: string;
+  /**
+   * API base URL. Default `https://api.webclaw.io`.
+   *
+   * SECURITY: your `apiKey` is sent as a Bearer token to whatever
+   * origin you set here. Only point this at hosts you trust — never
+   * at a value derived from untrusted input (SSRF / key-exfil footgun).
+   */
   baseUrl?: string;
   /** Request timeout in milliseconds. Default 30_000. */
   timeout?: number;
