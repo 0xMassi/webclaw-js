@@ -128,6 +128,27 @@ console.log(`Found ${result.count} URLs`);
 result.urls.forEach((url) => console.log(url));
 ```
 
+### Endpoints
+
+Discover API endpoints embedded in a page's JavaScript — scans inline `<script>` bodies plus `<script src>` bundles for request paths, absolute URLs, GraphQL, and WebSocket endpoints. This surfaces the request layer that `map` (sitemap-based) can't see.
+
+```typescript
+const result = await client.endpoints({
+  url: "https://example.com",
+  include_third_party: false, // default; set true to include other hosts
+  max_bundles: 20,            // default & max; bundles fetched on top of inline JS
+});
+
+console.log(`${result.endpoint_count} endpoints across ${result.bundles_scanned} bundles`);
+for (const ep of result.endpoints) {
+  console.log(ep.kind, ep.value, ep.first_party ? "(1st-party)" : "(3rd-party)");
+}
+result.hosts      // distinct hosts seen, e.g. ["api.example.com"]
+result.truncated  // true if results were capped by max_bundles
+```
+
+> **Security:** `endpoints`, `hosts`, and their fields are extracted from page content (inline scripts and fetched bundles), which is attacker-influenced. The SDK does not sanitize them. Never feed a returned `value` or `source` into another request, shell command, `eval`, or SQL query without your own validation.
+
 ### Batch
 
 Scrape multiple URLs in parallel with configurable concurrency.
@@ -372,6 +393,8 @@ import type {
   ScrapeResponse,
   CrawlRequest,
   CrawlStatusResponse,
+  EndpointsRequest,
+  EndpointsResponse,
   SearchRequest,
   SearchResponse,
   ExtractRequest,

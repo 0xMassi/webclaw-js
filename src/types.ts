@@ -110,6 +110,95 @@ export interface MapResponse {
   count: number;
 }
 
+// -- POST /v1/endpoints --
+
+export interface EndpointsRequest {
+  /** Page URL to scan for embedded API endpoints. Required. */
+  url: string;
+  /**
+   * Include endpoints whose host differs from the page's host
+   * (third-party APIs, CDNs, analytics). Default `false`.
+   */
+  include_third_party?: boolean;
+  /**
+   * Max number of `<script src>` bundles to fetch and scan, on top
+   * of the page's inline scripts. Default `20`, capped server-side
+   * at `20`.
+   */
+  max_bundles?: number;
+}
+
+/**
+ * What kind of reference a discovered endpoint is.
+ *
+ * - `relative_path` — a path-only reference (e.g. `/api/v1/users`).
+ * - `absolute_url` — a fully-qualified `http(s)` URL.
+ * - `graph_ql` — a GraphQL endpoint.
+ * - `web_socket` — a `ws://` / `wss://` endpoint.
+ */
+export type EndpointKind =
+  | "relative_path"
+  | "absolute_url"
+  | "graph_ql"
+  | "web_socket";
+
+/**
+ * A single API endpoint discovered inside a page's JavaScript.
+ *
+ * SECURITY: every field here is derived from page content (inline
+ * `<script>` bodies and fetched `<script src>` bundles), which is
+ * attacker-influenced. `value`, `source`, and the entries in
+ * {@link EndpointsResponse.hosts} are NOT validated or sanitized by
+ * the SDK. Never feed `value`/`source` into another fetch, shell,
+ * eval, or SQL without your own validation — treat them as untrusted
+ * strings (SSRF / injection footgun).
+ */
+export interface DiscoveredEndpoint {
+  /** The raw endpoint reference as found in the JS (path or URL). */
+  value: string;
+  /** Classification of {@link value}. */
+  kind: EndpointKind;
+  /**
+   * `true` if the endpoint's host matches the scanned page's host.
+   * `false` for third-party hosts (only present when the request set
+   * `include_third_party: true`).
+   */
+  first_party: boolean;
+  /**
+   * Where the endpoint was found — e.g. `inline` for an inline
+   * `<script>`, or the bundle URL for an external script. Also
+   * page-derived and untrusted (see the type-level SECURITY note).
+   */
+  source: string;
+}
+
+/**
+ * Response shape of `POST /v1/endpoints`.
+ *
+ * Discovers API endpoints embedded in a page's inline JS and
+ * `<script src>` bundles — the request/GraphQL/WebSocket surface that
+ * {@link MapResponse} (sitemap-based) cannot see. Credit cost: 2.
+ *
+ * SECURITY: `endpoints`, `hosts`, and their fields are extracted from
+ * attacker-influenced page content and are not sanitized. See
+ * {@link DiscoveredEndpoint} before using any value in a downstream
+ * request, command, or query.
+ */
+export interface EndpointsResponse {
+  /** The URL that was scanned. */
+  url: string;
+  /** Number of script bundles fetched and scanned. */
+  bundles_scanned: number;
+  /** Total number of endpoints in {@link endpoints}. */
+  endpoint_count: number;
+  /** The discovered endpoints. Page-derived and untrusted. */
+  endpoints: DiscoveredEndpoint[];
+  /** Distinct hosts seen across all endpoints. Page-derived. */
+  hosts: string[];
+  /** `true` if results were capped by `max_bundles`. */
+  truncated: boolean;
+}
+
 // -- POST /v1/batch --
 
 export interface BatchRequest {

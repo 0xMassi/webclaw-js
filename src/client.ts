@@ -21,6 +21,8 @@ import type {
   CrawlStatusResponse,
   DiffRequest,
   DiffResponse,
+  EndpointsRequest,
+  EndpointsResponse,
   ExtractRequest,
   ExtractResponse,
   MapRequest,
@@ -98,6 +100,30 @@ export class Webclaw {
    */
   async map(params: MapRequest): Promise<MapResponse> {
     return this.post<MapResponse>("/v1/map", params);
+  }
+
+  /**
+   * Discover API endpoints embedded in a page's JavaScript.
+   *
+   * Scans the page's inline `<script>` bodies plus its `<script src>`
+   * bundles for request paths, absolute URLs, GraphQL, and WebSocket
+   * endpoints — the API surface that {@link map} (sitemap-based)
+   * cannot see. Credit cost: 2.
+   *
+   * SECURITY: the returned `endpoints`/`hosts` are extracted from
+   * attacker-influenced page content and are NOT sanitized by the SDK.
+   * Do not feed any returned `value`/`source` into another fetch,
+   * shell, eval, or SQL without your own validation. See
+   * {@link DiscoveredEndpoint}.
+   *
+   * @param params - URL plus optional third-party / bundle-count opts.
+   * @returns Discovered endpoints, hosts, and scan counters.
+   * @throws {WebclawError} On network or API errors (400 if `url` is
+   *   missing or invalid).
+   */
+  async endpoints(params: EndpointsRequest): Promise<EndpointsResponse> {
+    if (!params.url) throw new Error("url is required");
+    return this.post<EndpointsResponse>("/v1/endpoints", params);
   }
 
   /**

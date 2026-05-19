@@ -11,6 +11,7 @@ import type {
   ScrapeResponse,
   CrawlStatusResponse,
   MapResponse,
+  EndpointsResponse,
   BatchResponse,
   ExtractResponse,
   SummarizeResponse,
@@ -256,6 +257,79 @@ describe("map", () => {
     const res = await client().map({ url: "https://example.com" });
     expect(res.count).toBe(2);
     expect(res.urls).toHaveLength(2);
+  });
+});
+
+// ---- POST /v1/endpoints ----
+
+describe("endpoints", () => {
+  const endpointsRes: EndpointsResponse = {
+    url: "https://example.com",
+    bundles_scanned: 3,
+    endpoint_count: 2,
+    endpoints: [
+      {
+        value: "/api/v1/users",
+        kind: "relative_path",
+        first_party: true,
+        source: "inline",
+      },
+      {
+        value: "wss://example.com/socket",
+        kind: "web_socket",
+        first_party: true,
+        source: "https://example.com/app.js",
+      },
+    ],
+    hosts: ["example.com"],
+    truncated: false,
+  };
+
+  it("returns discovered endpoints", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(endpointsRes));
+    const res = await client().endpoints({ url: "https://example.com" });
+    expect(res.endpoint_count).toBe(2);
+    expect(res.endpoints).toHaveLength(2);
+    expect(res.endpoints[0].kind).toBe("relative_path");
+    expect(res.endpoints[1].kind).toBe("web_socket");
+    expect(res.hosts).toEqual(["example.com"]);
+    expect(res.truncated).toBe(false);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/endpoints",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("requires url", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().endpoints({ include_third_party: true }),
+    ).rejects.toThrow("url is required");
+  });
+
+  it("passes include_third_party and max_bundles through", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(endpointsRes));
+    await client().endpoints({
+      url: "https://example.com",
+      include_third_party: true,
+      max_bundles: 10,
+    });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.url).toBe("https://example.com");
+    expect(body.include_third_party).toBe(true);
+    expect(body.max_bundles).toBe(10);
+  });
+
+  it("throws WebclawError with the server error on 400", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "invalid url" }, 400));
+    try {
+      await client().endpoints({ url: "not-a-url" });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(WebclawError);
+      expect((err as WebclawError).status).toBe(400);
+      expect((err as WebclawError).message).toBe("invalid url");
+    }
   });
 });
 
