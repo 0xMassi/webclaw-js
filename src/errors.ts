@@ -21,6 +21,20 @@ export class AuthenticationError extends WebclawError {
   }
 }
 
+export class CreditLimitError extends WebclawError {
+  constructor(message = "Credit limit reached") {
+    super(message, 402);
+    this.name = "CreditLimitError";
+  }
+}
+
+export class ScopeError extends WebclawError {
+  constructor(message = "API key lacks the required scope") {
+    super(message, 403);
+    this.name = "ScopeError";
+  }
+}
+
 export class RateLimitError extends WebclawError {
   public readonly retryAfter: number | null;
 

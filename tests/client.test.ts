@@ -3,6 +3,8 @@ import {
   Webclaw,
   WebclawError,
   AuthenticationError,
+  CreditLimitError,
+  ScopeError,
   RateLimitError,
   NotFoundError,
   TimeoutError,
@@ -421,6 +423,34 @@ describe("error handling", () => {
     ).rejects.toThrow(AuthenticationError);
   });
 
+  it("throws CreditLimitError on 402", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "Credit limit reached" }, 402),
+    );
+    try {
+      await client().scrape({ url: "https://example.com" });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(CreditLimitError);
+      expect((err as CreditLimitError).status).toBe(402);
+      expect((err as CreditLimitError).message).toBe("Credit limit reached");
+    }
+  });
+
+  it("throws ScopeError on 403", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "scope 'crawl' denied" }, 403),
+    );
+    try {
+      await client().scrape({ url: "https://example.com" });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ScopeError);
+      expect((err as ScopeError).status).toBe(403);
+      expect((err as ScopeError).message).toBe("scope 'crawl' denied");
+    }
+  });
+
   it("throws NotFoundError on 404", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "Not found" }, 404));
     await expect(client().getCrawlStatus("bad-id")).rejects.toThrow(
@@ -489,6 +519,43 @@ describe("error handling", () => {
     } catch (err) {
       expect((err as WebclawError).message).toBe("Custom server error");
     }
+  });
+
+  it("returns undefined on a non-204 success with an empty body", async () => {
+    // Some endpoints reply 200/202 with no content; an empty body must
+    // not be parsed as JSON (which used to throw "Invalid JSON").
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const res = await client().watchCheck("watch_1");
+    expect(res).toBeUndefined();
+  });
+});
+
+// ---- Input validation guards ----
+
+describe("input validation", () => {
+  it("map requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().map({})).rejects.toThrow("url is required");
+  });
+
+  it("crawl requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().crawl({})).rejects.toThrow("url is required");
+  });
+
+  it("summarize requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().summarize({})).rejects.toThrow("url is required");
+  });
+
+  it("brand requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().brand({})).rejects.toThrow("url is required");
+  });
+
+  it("diff requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().diff({})).rejects.toThrow("url is required");
   });
 });
 
@@ -700,6 +767,46 @@ describe("research polling", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/research/r3",
     );
+  });
+});
+
+// ---- Async start calls ignore the per-request timeout ----
+
+describe("async start timeout", () => {
+  it("crawl start is not aborted by the client timeout", async () => {
+    const wc = client({ timeout: 20 });
+    // Resolve the start well after the 20ms client timeout would have
+    // fired; with the timeout disabled for start calls it still works.
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) =>
+          setTimeout(
+            () => resolve(jsonResponse({ id: "slow-job", status: "running" })),
+            60,
+          ),
+        ),
+    );
+    const job = await wc.crawl({ url: "https://example.com" });
+    expect(job.id).toBe("slow-job");
+  });
+
+  it("research start is not aborted by the client timeout", async () => {
+    const wc = client({ timeout: 20 });
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) =>
+          setTimeout(
+            () => resolve(jsonResponse({ id: "r-slow", status: "running" })),
+            60,
+          ),
+        ),
+    );
+    // Status poll completes immediately.
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "r-slow", query: "q", status: "completed" }),
+    );
+    const res = await wc.research({ query: "q" }, { interval: 5 });
+    expect(res.status).toBe("completed");
   });
 });
 
