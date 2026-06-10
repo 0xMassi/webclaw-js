@@ -5,8 +5,10 @@
 
 import {
   AuthenticationError,
+  CreditLimitError,
   NotFoundError,
   RateLimitError,
+  ScopeError,
   TimeoutError,
   WebclawError,
 } from "./errors.js";
@@ -79,7 +81,10 @@ export class Webclaw {
    * @throws {WebclawError} On network or API errors.
    */
   async crawl(params: CrawlRequest): Promise<CrawlJob> {
-    const res = await this.post<CrawlStartResponse>("/v1/crawl", params);
+    if (!params.url) throw new Error("url is required");
+    // Async start: no per-request timeout. The job is awaited via
+    // polling (which keeps its own deadline), not this call.
+    const res = await this.post<CrawlStartResponse>("/v1/crawl", params, null);
     return new CrawlJob(res.id, this);
   }
 
@@ -99,6 +104,7 @@ export class Webclaw {
    * @returns List of discovered URLs and total count.
    */
   async map(params: MapRequest): Promise<MapResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<MapResponse>("/v1/map", params);
   }
 
@@ -152,6 +158,7 @@ export class Webclaw {
    * @returns The generated summary text.
    */
   async summarize(params: SummarizeRequest): Promise<SummarizeResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<SummarizeResponse>("/v1/summarize", params);
   }
 
@@ -161,6 +168,7 @@ export class Webclaw {
    * @returns Brand data as a flexible object (shape depends on the site).
    */
   async brand(params: BrandRequest): Promise<BrandResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<BrandResponse>("/v1/brand", params);
   }
 
@@ -180,6 +188,7 @@ export class Webclaw {
    * @returns Detected changes between the two states.
    */
   async diff(params: DiffRequest): Promise<DiffResponse> {
+    if (!params.url) throw new Error("url is required");
     return this.post<DiffResponse>("/v1/diff", params);
   }
 
@@ -196,9 +205,12 @@ export class Webclaw {
     opts: ResearchPollOptions = {},
   ): Promise<ResearchResponse> {
     if (!params.query) throw new Error("query is required");
+    // Async start: no per-request timeout. Completion is awaited via
+    // polling below, which enforces its own (interval, maxWait) deadline.
     const start = await this.post<ResearchStartResponse>(
       "/v1/research",
       params,
+      null,
     );
 
     const interval = opts.interval ?? 2_000;
@@ -340,33 +352,48 @@ export class Webclaw {
 
   // -- Internal HTTP layer --
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  /**
+   * @param timeoutMs - Per-request abort deadline. Defaults to the
+   *   client timeout. Pass `null` to disable the deadline entirely —
+   *   used for async *start* calls (crawl/research start) which can
+   *   legitimately take longer than the sync-call budget; their results
+   *   are then awaited via polling, which keeps its own timeout.
+   */
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+    timeoutMs: number | null = this.timeout,
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeout);
+    const timer =
+      timeoutMs === null
+        ? null
+        : setTimeout(() => controller.abort(), timeoutMs);
 
     let res: Response;
     try {
       res = await fetch(url, { ...init, signal: controller.signal });
     } catch (err: unknown) {
       if (isAbortError(err)) {
-        throw new TimeoutError(this.timeout);
+        throw new TimeoutError(timeoutMs ?? this.timeout);
       }
       throw new WebclawError(
         err instanceof Error ? err.message : "Network request failed",
       );
     } finally {
-      clearTimeout(timer);
-    }
-
-    // DELETE with 204 has no body
-    if (res.ok && res.status === 204) {
-      return undefined as T;
+      if (timer !== null) clearTimeout(timer);
     }
 
     if (res.ok) {
+      // 204, or any other success with an empty body (some endpoints
+      // reply 200/202 with no content). Don't try to parse "" as JSON.
+      const text = await res.text();
+      if (text.length === 0) {
+        return undefined as T;
+      }
       try {
-        return (await res.json()) as T;
+        return JSON.parse(text) as T;
       } catch {
         throw new WebclawError("Invalid JSON in response body", res.status);
       }
@@ -382,6 +409,8 @@ export class Webclaw {
       res.statusText;
 
     if (res.status === 401) throw new AuthenticationError(message);
+    if (res.status === 402) throw new CreditLimitError(message);
+    if (res.status === 403) throw new ScopeError(message);
     if (res.status === 404) throw new NotFoundError(message);
     if (res.status === 429) {
       const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
@@ -391,15 +420,23 @@ export class Webclaw {
     throw new WebclawError(message, res.status, parsed ?? body);
   }
 
-  private post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
+  private post<T>(
+    path: string,
+    body: unknown,
+    timeoutMs: number | null = this.timeout,
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      timeoutMs,
+    );
   }
 
   private get<T>(path: string): Promise<T> {
