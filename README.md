@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://webclaw.io">
-    <img src=".github/banner.png" alt="webclaw" width="600" />
+    <img src=".github/banner.png" alt="webclaw" width="760" />
   </a>
 </p>
 
