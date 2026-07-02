@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://webclaw.io">
-    <img src=".github/banner.png" alt="webclaw" width="600" />
+    <img src=".github/banner.png" alt="webclaw" width="760" />
   </a>
 </p>
 
@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@webclaw/sdk"><img src="https://img.shields.io/npm/v/@webclaw/sdk?style=flat-square&color=212529" alt="npm" /></a>
-  <a href="https://www.npmjs.com/package/@webclaw/sdk"><img src="https://img.shields.io/node/v/@webclaw/sdk?style=flat-square&color=212529" alt="Node" /></a>
-  <a href="https://github.com/0xMassi/webclaw-js/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-212529?style=flat-square" alt="License" /></a>
+  <a href="https://www.npmjs.com/package/@webclaw/sdk"><img src="https://shieldcn.dev/npm/dt/@webclaw/sdk.svg?variant=branded" alt="npm downloads" /></a>
+  <a href="https://github.com/0xMassi/webclaw-js/stargazers"><img src="https://shieldcn.dev/github/stars/0xMassi/webclaw-js.svg?variant=branded&logo=github" alt="Stars" /></a>
+  <a href="https://github.com/0xMassi/webclaw-js/blob/main/LICENSE"><img src="https://shieldcn.dev/github/license/0xMassi/webclaw-js.svg?variant=branded" alt="License" /></a>
 </p>
 
 ---
