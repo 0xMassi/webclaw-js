@@ -44,6 +44,14 @@ import type {
   WebclawConfig,
   ListExtractorsResponse,
   VerticalScrapeResponse,
+  CreateXMonitorRequest,
+  UpdateXMonitorRequest,
+  XMonitor,
+  ListXMonitorsResponse,
+  XMonitorMutationResponse,
+  XMonitorCheckResponse,
+  ExportXAudienceRequest,
+  ExportXAudienceResponse,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://api.webclaw.io";
@@ -307,6 +315,111 @@ export class Webclaw {
     );
   }
 
+  // -- X (Twitter) monitor methods --
+  //
+  // The X analog of the watch endpoints: poll X (profiles, searches,
+  // lists, or replies) and fire a webhook on new matches. Paid-only —
+  // the server returns 403 (ScopeError) for free/lapsed accounts.
+  // Monitors cost 1 credit per check; audience export costs 1 credit
+  // per page fetched. Max 50 monitors per user.
+
+  /**
+   * Create a monitor that polls X and fires a webhook on new matches.
+   * @param params - `kind` + `target` (required) plus poll interval and
+   *   match filters.
+   * @returns The created monitor (core fields only).
+   * @throws {ScopeError} On free/lapsed accounts (403).
+   */
+  async createXMonitor(params: CreateXMonitorRequest): Promise<XMonitor> {
+    if (!params.kind) throw new Error("kind is required");
+    if (!params.target) throw new Error("target is required");
+    return this.post<XMonitor>("/v1/x/monitors", params);
+  }
+
+  /**
+   * List X monitors.
+   * @param limit - Page size, 1..100.
+   * @param offset - Page offset, >= 0.
+   * @returns `{ monitors }` — an array of full monitor objects.
+   */
+  async listXMonitors(
+    limit?: number,
+    offset?: number,
+  ): Promise<ListXMonitorsResponse> {
+    const query = new URLSearchParams();
+    if (limit !== undefined) query.set("limit", String(limit));
+    if (offset !== undefined) query.set("offset", String(offset));
+    const qs = query.toString();
+    return this.get<ListXMonitorsResponse>(
+      `/v1/x/monitors${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  /** Get one X monitor (full object). */
+  async getXMonitor(id: string): Promise<XMonitor> {
+    return this.get<XMonitor>(`/v1/x/monitors/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Update an X monitor. Only the fields you pass are changed.
+   * @returns `{ success: true }`.
+   */
+  async updateXMonitor(
+    id: string,
+    params: UpdateXMonitorRequest,
+  ): Promise<XMonitorMutationResponse> {
+    return this.patch<XMonitorMutationResponse>(
+      `/v1/x/monitors/${encodeURIComponent(id)}`,
+      params,
+    );
+  }
+
+  /**
+   * Delete an X monitor.
+   * @returns `{ success: true }`.
+   */
+  async deleteXMonitor(id: string): Promise<XMonitorMutationResponse> {
+    return this.request<XMonitorMutationResponse>(
+      `/v1/x/monitors/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+      },
+    );
+  }
+
+  /**
+   * Trigger an immediate check of an X monitor. Runs in the background.
+   * @returns `{ status: "checking" }`.
+   */
+  async checkXMonitor(id: string): Promise<XMonitorCheckResponse> {
+    return this.post<XMonitorCheckResponse>(
+      `/v1/x/monitors/${encodeURIComponent(id)}/check`,
+      {},
+    );
+  }
+
+  /**
+   * Export an X account's followers or following — cursor-paginated and
+   * metered at 1 credit per page fetched.
+   *
+   * Provide `handle` OR `user_id`. To walk a full audience, call
+   * repeatedly, passing the returned `user_id` and `next_cursor` back in,
+   * until `next_cursor` is `null`.
+   *
+   * @param params - `handle`/`user_id`, direction, cursor, page count.
+   * @returns A page of users plus paging + billing metadata.
+   * @throws {ScopeError} On free/lapsed accounts (403).
+   */
+  async exportXAudience(
+    params: ExportXAudienceRequest,
+  ): Promise<ExportXAudienceResponse> {
+    if (!params.handle && !params.user_id) {
+      throw new Error("handle or user_id is required");
+    }
+    return this.post<ExportXAudienceResponse>("/v1/x/audience", params);
+  }
+
   // -- Vertical extractor methods --
 
   /**
@@ -443,6 +556,17 @@ export class Webclaw {
     return this.request<T>(path, {
       method: "GET",
       headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+  }
+
+  private patch<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(body),
     });
   }
 

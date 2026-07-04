@@ -333,6 +333,132 @@ console.log(updated.last_checked_at);
 await client.watchDelete("watch_abc123");
 ```
 
+### X (Twitter) monitoring
+
+Monitor X for new tweets — profiles, search queries, lists, or replies to a tweet — and receive webhook notifications when new matches appear. The X analog of Watch. You can also export an account's followers or following.
+
+> **Paid feature.** These endpoints return `403` (`ScopeError`) on free or lapsed accounts. Monitors and audience export are billed per X request at your plan rate (Starter 5, Growth 3, Pro 2, Scale 1 credits). Max 50 monitors per account.
+
+**Create a monitor**
+
+```typescript
+const monitor = await client.createXMonitor({
+  kind: "profile",             // "profile" | "search" | "list" | "replies"
+  target: "@webclaw",          // handle | search query | list id | tweet id (per kind)
+  name: "Webclaw mentions",
+  interval_minutes: 15,        // default 15, clamped 2..10080
+  webhook_url: "https://discord.com/api/webhooks/...",
+  include_retweets: true,      // default true
+  include_replies: true,       // default true
+  include_quotes: true,        // default true
+  min_faves: 0,                // minimum likes to match
+  keyword: "scraping",         // only match tweets containing this
+  lang: "en",                  // only match this language
+});
+console.log("Monitor ID:", monitor.id);
+```
+
+**List monitors**
+
+```typescript
+const { monitors } = await client.listXMonitors(10, 0); // limit, offset
+for (const m of monitors) {
+  console.log(m.id, m.kind, m.target, m.active);
+}
+```
+
+**Get a single monitor**
+
+```typescript
+const monitor = await client.getXMonitor("xmon_abc123");
+console.log(monitor.last_checked_at, monitor.last_matched_at);
+```
+
+**Update a monitor**
+
+```typescript
+const res = await client.updateXMonitor("xmon_abc123", {
+  name: "Renamed",
+  interval_minutes: 30,
+  webhook_url: "https://hooks.slack.com/services/...",
+  active: false,       // pause it
+});
+console.log(res.success); // true
+```
+
+**Trigger an immediate check**
+
+```typescript
+const res = await client.checkXMonitor("xmon_abc123");
+console.log(res.status); // "checking" — runs in the background
+```
+
+**Delete a monitor**
+
+```typescript
+const res = await client.deleteXMonitor("xmon_abc123");
+console.log(res.success); // true
+```
+
+**Webhook payload**
+
+When a monitor matches new tweets, `webhook_url` receives:
+
+```json
+{
+  "event": "x.monitor.matched",
+  "monitor_id": "xmon_abc123",
+  "kind": "profile",
+  "target": "webclaw",
+  "new_count": 2,
+  "tweets": [
+    {
+      "id": "1790000000000000000",
+      "screen_name": "webclaw",
+      "text": "…",
+      "url": "https://x.com/webclaw/status/1790000000000000000",
+      "created_at": "2026-06-12T10:00:00Z",
+      "favorite_count": 42,
+      "retweet_count": 7,
+      "reply_count": 3,
+      "lang": "en",
+      "is_retweet": false,
+      "is_reply": false,
+      "is_quote": false
+    }
+  ],
+  "checked_at": "2026-06-12T10:00:05Z"
+}
+```
+
+Discord and Slack webhook URLs receive native embed/text formatting instead of this generic JSON.
+
+**Export an audience**
+
+Export an account's followers or following, cursor-paginated and metered per page at your plan rate (Starter 5, Growth 3, Pro 2, Scale 1 credits). To walk a full audience, call repeatedly — pass the returned `user_id` and `next_cursor` back in until `next_cursor` is `null`.
+
+```typescript
+let cursor: string | null | undefined;
+let userId: string | undefined;
+
+do {
+  const page = await client.exportXAudience({
+    handle: userId ? undefined : "@webclaw", // resolved once (unbilled)
+    user_id: userId,                          // reuse to skip re-resolving
+    direction: "followers",                   // "followers" (default) | "following"
+    cursor: cursor ?? undefined,
+    max_pages: 2,                             // default 2, clamped 1..10
+  });
+
+  for (const u of page.users) {
+    console.log(u.screen_name, u.followers, u.description);
+  }
+
+  userId = page.user_id;
+  cursor = page.next_cursor;
+} while (cursor !== null);
+```
+
 ### Firecrawl v2 compatibility
 
 The API also exposes a Firecrawl-compatible surface at `/v2/scrape`, `/v2/crawl`, and `/v2/search`. These endpoints are not yet wrapped by this SDK (future work) — call them directly if you need Firecrawl drop-in compatibility today.
@@ -403,6 +529,12 @@ import type {
   ResearchResponse,
   WatchCreateRequest,
   WatchResponse,
+  CreateXMonitorRequest,
+  UpdateXMonitorRequest,
+  XMonitor,
+  ListXMonitorsResponse,
+  ExportXAudienceRequest,
+  ExportXAudienceResponse,
   // ... and more
 } from "@webclaw/sdk";
 ```

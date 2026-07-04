@@ -375,6 +375,146 @@ export interface WatchResponse {
   snapshots?: Array<Record<string, unknown>>;
 }
 
+// -- X (Twitter) monitoring endpoints --
+
+/**
+ * What a monitor polls on X.
+ *
+ * - `profile` — a user's timeline (target is a handle, leading `@` stripped).
+ * - `search` — a search query (target is the query string).
+ * - `list` — a list's timeline (target is the numeric list id).
+ * - `replies` — replies to a tweet (target is the tweet id).
+ */
+export type XMonitorKind = "profile" | "search" | "list" | "replies";
+
+export interface CreateXMonitorRequest {
+  /** What to poll. Determines how `target` is interpreted. */
+  kind: XMonitorKind;
+  /**
+   * Handle (leading `@` is stripped), search query, list id, or tweet
+   * id — interpreted per {@link kind}.
+   */
+  target: string;
+  name?: string;
+  /** Poll interval. Default 15, clamped server-side to 2..10080. */
+  interval_minutes?: number;
+  /** Discord/Slack/generic webhook fired on new matches. */
+  webhook_url?: string;
+  /** Match retweets. Default `true`. */
+  include_retweets?: boolean;
+  /** Match replies. Default `true`. */
+  include_replies?: boolean;
+  /** Match quote tweets. Default `true`. */
+  include_quotes?: boolean;
+  /** Minimum likes to match. Default `0`. */
+  min_faves?: number;
+  /** Only match tweets containing this substring. */
+  keyword?: string;
+  /** Only match tweets in this language code. */
+  lang?: string;
+}
+
+/**
+ * Fields accepted by {@link Webclaw#updateXMonitor}. All optional —
+ * only the provided fields are changed.
+ */
+export interface UpdateXMonitorRequest {
+  name?: string;
+  interval_minutes?: number;
+  webhook_url?: string;
+  active?: boolean;
+}
+
+/**
+ * A monitor object.
+ *
+ * `createXMonitor` returns only the core fields (`id`, `kind`, `target`,
+ * `name`, `interval_minutes`, `webhook_url`, `active`); the list/get
+ * endpoints return the full object including match filters and
+ * timestamps. The extra fields are marked optional so both shapes fit
+ * one type.
+ */
+export interface XMonitor {
+  id: string;
+  kind: XMonitorKind;
+  target: string;
+  name?: string;
+  interval_minutes: number;
+  webhook_url?: string;
+  active: boolean;
+  include_retweets?: boolean;
+  include_replies?: boolean;
+  include_quotes?: boolean;
+  min_faves?: number;
+  keyword?: string;
+  lang?: string;
+  last_checked_at?: string;
+  last_matched_at?: string;
+  created_at?: string;
+}
+
+/** Response shape of `GET /v1/x/monitors`. */
+export interface ListXMonitorsResponse {
+  monitors: XMonitor[];
+}
+
+/** Response shape of `PATCH` and `DELETE /v1/x/monitors/{id}`. */
+export interface XMonitorMutationResponse {
+  success: boolean;
+}
+
+/** Response shape of `POST /v1/x/monitors/{id}/check`. */
+export interface XMonitorCheckResponse {
+  status: "checking";
+}
+
+/** Which side of the follow graph {@link ExportXAudienceRequest} walks. */
+export type XAudienceDirection = "followers" | "following";
+
+export interface ExportXAudienceRequest {
+  /**
+   * `@handle` to export. Resolved once (unbilled). Provide `handle`
+   * OR `user_id`.
+   */
+  handle?: string;
+  /**
+   * Pre-resolved numeric user id. Pass the `user_id` from a previous
+   * response back on later pages to skip re-resolving.
+   */
+  user_id?: string;
+  /** Which follow direction to walk. Default `"followers"`. */
+  direction?: XAudienceDirection;
+  /** Opaque cursor from a previous response's `next_cursor`. */
+  cursor?: string;
+  /** Pages to fetch this call. Default 2, clamped server-side to 1..10. */
+  max_pages?: number;
+}
+
+/** One user in an audience export page. */
+export interface XAudienceUser {
+  id: string;
+  screen_name: string;
+  name: string;
+  followers: number;
+  description: string;
+  url: string;
+}
+
+export interface ExportXAudienceResponse {
+  user_id: string;
+  direction: XAudienceDirection;
+  count: number;
+  users: XAudienceUser[];
+  /**
+   * Opaque cursor for the next page, or `null` when the audience is
+   * fully walked. Pass it (with `user_id`) back into
+   * {@link ExportXAudienceRequest} to page.
+   */
+  next_cursor: string | null;
+  pages_fetched: number;
+  credits_charged: number;
+}
+
 // -- Client config --
 
 export interface WebclawConfig {

@@ -19,6 +19,9 @@ import type {
   SummarizeResponse,
   WatchResponse,
   ResearchResponse,
+  XMonitor,
+  ListXMonitorsResponse,
+  ExportXAudienceResponse,
 } from "../src/index.js";
 
 // -- Helpers --
@@ -716,6 +719,141 @@ describe("watch endpoints", () => {
     expect(fetchSpy.mock.calls[0][1].method).toBe("DELETE");
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch/watch_1",
+    );
+  });
+});
+
+// ---- X (Twitter) monitor endpoints ----
+
+describe("x monitor endpoints", () => {
+  const monitor: XMonitor = {
+    id: "xmon_1",
+    kind: "profile",
+    target: "webclaw",
+    name: "Mentions",
+    interval_minutes: 15,
+    webhook_url: "https://discord.com/api/webhooks/x",
+    active: true,
+  };
+
+  it("createXMonitor POSTs to /v1/x/monitors", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(monitor));
+    const res = await client().createXMonitor({
+      kind: "profile",
+      target: "@webclaw",
+      name: "Mentions",
+    });
+    expect(res.id).toBe("xmon_1");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("createXMonitor requires kind", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().createXMonitor({ target: "@webclaw" }),
+    ).rejects.toThrow("kind is required");
+  });
+
+  it("createXMonitor requires target", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().createXMonitor({ kind: "profile" }),
+    ).rejects.toThrow("target is required");
+  });
+
+  it("listXMonitors builds limit/offset query string", async () => {
+    const body: ListXMonitorsResponse = { monitors: [monitor] };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(body));
+    const res = await client().listXMonitors(10, 5);
+    expect(res.monitors).toHaveLength(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors?limit=10&offset=5",
+    );
+  });
+
+  it("listXMonitors omits query string when no args", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ monitors: [] }));
+    await client().listXMonitors();
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors",
+    );
+  });
+
+  it("getXMonitor GETs a single monitor by encoded id", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(monitor));
+    const res = await client().getXMonitor("xmon/1");
+    expect(res.id).toBe("xmon_1");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors/xmon%2F1",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("GET");
+  });
+
+  it("updateXMonitor PATCHes and returns success", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ success: true }));
+    const res = await client().updateXMonitor("xmon_1", { active: false });
+    expect(res.success).toBe(true);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors/xmon_1",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("PATCH");
+  });
+
+  it("deleteXMonitor DELETEs and returns success", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ success: true }));
+    const res = await client().deleteXMonitor("xmon_1");
+    expect(res.success).toBe(true);
+    expect(fetchSpy.mock.calls[0][1].method).toBe("DELETE");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors/xmon_1",
+    );
+  });
+
+  it("checkXMonitor POSTs to /v1/x/monitors/{id}/check", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "checking" }));
+    const res = await client().checkXMonitor("xmon_1");
+    expect(res.status).toBe("checking");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/monitors/xmon_1/check",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("exportXAudience POSTs to /v1/x/audience", async () => {
+    const body: ExportXAudienceResponse = {
+      user_id: "44196397",
+      direction: "followers",
+      count: 1,
+      users: [
+        {
+          id: "1",
+          screen_name: "someone",
+          name: "Some One",
+          followers: 10,
+          description: "",
+          url: "",
+        },
+      ],
+      next_cursor: null,
+      pages_fetched: 1,
+      credits_charged: 1,
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(body));
+    const res = await client().exportXAudience({ handle: "@webclaw" });
+    expect(res.next_cursor).toBeNull();
+    expect(res.users).toHaveLength(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/x/audience",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("exportXAudience requires handle or user_id", async () => {
+    await expect(client().exportXAudience({})).rejects.toThrow(
+      "handle or user_id is required",
     );
   });
 });
