@@ -16,6 +16,9 @@ import type {
   EndpointsResponse,
   BatchResponse,
   ExtractResponse,
+  LeadResponse,
+  LeadBatchStartResponse,
+  LeadBatchResponse,
   SummarizeResponse,
   WatchResponse,
   ResearchResponse,
@@ -386,6 +389,223 @@ describe("extract", () => {
     });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.schema).toHaveProperty("type", "object");
+  });
+});
+
+// ---- POST /v1/lead ----
+
+describe("lead", () => {
+  const leadRes: LeadResponse = {
+    url: "https://resend.com",
+    domain: "resend.com",
+    lead: {
+      company_name: "Resend",
+      summary: "Email API for developers.",
+      socials: {
+        linkedin: "https://linkedin.com/company/resend",
+        x: "https://x.com/resend",
+        github: "https://github.com/resend",
+      },
+      tech: ["Next.js", "React", "AWS"],
+      pricing: [{ plan: "Free", price: "$0" }],
+      emails: [{ type: "support", email: "support@resend.com" }],
+      people: [
+        {
+          name: "Zeno Rocha",
+          role: "CEO",
+          linkedin: "https://linkedin.com/in/zenorocha",
+          x: "https://x.com/zenorocha",
+        },
+      ],
+    },
+    people_source: "web_search",
+    cache: "miss",
+    credits: 100,
+  };
+
+  it("returns the enriched lead", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(leadRes));
+    const res = await client().lead("https://resend.com");
+    expect(res.lead.company_name).toBe("Resend");
+    expect(res.lead.socials?.github).toBe("https://github.com/resend");
+    expect(res.lead.pricing?.[0].plan).toBe("Free");
+    expect(res.lead.emails?.[0].email).toBe("support@resend.com");
+    expect(res.lead.people?.[0].name).toBe("Zeno Rocha");
+    expect(res.lead.people?.[0].linkedin).toBe(
+      "https://linkedin.com/in/zenorocha",
+    );
+    expect(res.lead.people?.[0].x).toBe("https://x.com/zenorocha");
+    expect(res.people_source).toBe("web_search");
+    expect(res.credits).toBe(100);
+    expect(res.cache).toBe("miss");
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/lead");
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("sends url and options in the request body", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(leadRes));
+    await client().lead("https://resend.com", { no_cache: true });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.url).toBe("https://resend.com");
+    expect(body.no_cache).toBe(true);
+  });
+
+  it("defaults to no options when only a url is given", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(leadRes));
+    await client().lead("https://resend.com");
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.url).toBe("https://resend.com");
+    expect(body.no_cache).toBeUndefined();
+  });
+
+  it("requires url", async () => {
+    // @ts-expect-error testing runtime guard
+    await expect(client().lead()).rejects.toThrow("url is required");
+  });
+});
+
+// ---- POST /v1/lead/batch (async) ----
+
+describe("lead batch", () => {
+  const startRes: LeadBatchStartResponse = {
+    id: "lb_1",
+    status: "processing",
+    total: 2,
+    credits_per_url: 100,
+  };
+
+  const doneRes: LeadBatchResponse = {
+    id: "lb_1",
+    status: "completed",
+    total: 2,
+    completed: 2,
+    succeeded: 1,
+    credits_charged: 100,
+    results: [
+      {
+        url: "https://resend.com",
+        status: "success",
+        domain: "resend.com",
+        lead: {
+          company_name: "Resend",
+          summary: "Email API for developers.",
+          socials: { linkedin: "https://linkedin.com/company/resend" },
+          tech: ["Next.js"],
+          pricing: [{ plan: "Free", price: "$0" }],
+          emails: [{ type: "support", email: "support@resend.com" }],
+          people: [
+            {
+              name: "Zeno Rocha",
+              role: "CEO",
+              linkedin: "https://linkedin.com/in/zenorocha",
+              x: "https://x.com/zenorocha",
+            },
+          ],
+        },
+        cache: "miss",
+      },
+      {
+        url: "https://bad.example.com",
+        status: "error",
+        error: "fetch failed",
+      },
+    ],
+    error: null,
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("leadBatch POSTs to /v1/lead/batch and returns the start response", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(startRes));
+    const res = await client().leadBatch([
+      "https://resend.com",
+      "https://bad.example.com",
+    ]);
+    expect(res.id).toBe("lb_1");
+    expect(res.status).toBe("processing");
+    expect(res.total).toBe(2);
+    expect(res.credits_per_url).toBe(100);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/lead/batch",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("leadBatch sends urls and options in the request body", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(startRes));
+    await client().leadBatch(["https://resend.com"], { no_cache: true });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.urls).toEqual(["https://resend.com"]);
+    expect(body.no_cache).toBe(true);
+  });
+
+  it("leadBatch requires a non-empty urls array", async () => {
+    await expect(client().leadBatch([])).rejects.toThrow(
+      "urls must be a non-empty array",
+    );
+  });
+
+  it("getLeadBatch GETs /v1/lead/batch/{id} by encoded id", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(doneRes));
+    const res = await client().getLeadBatch("lb/1");
+    expect(res.status).toBe("completed");
+    expect(res.succeeded).toBe(1);
+    expect(res.results).toHaveLength(2);
+    const first = res.results[0];
+    expect(first.status).toBe("success");
+    // Narrow the discriminated union to read the enriched lead.
+    if (first.status === "success") {
+      expect(first.lead.company_name).toBe("Resend");
+      expect(first.lead.people?.[0].name).toBe("Zeno Rocha");
+      expect(first.cache).toBe("miss");
+    }
+    const second = res.results[1];
+    if (second.status === "error") {
+      expect(second.error).toBe("fetch failed");
+    }
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/lead/batch/lb%2F1",
+    );
+    expect(fetchSpy.mock.calls[0][1].method).toBe("GET");
+  });
+
+  it("waitForLeadBatch polls /v1/lead/batch/{id} until completed", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        jsonResponse({ ...doneRes, status: "processing", completed: 1 }),
+      )
+      .mockResolvedValueOnce(jsonResponse(doneRes));
+    const res = await client().waitForLeadBatch("lb_1", { interval: 10 });
+    expect(res.status).toBe("completed");
+    expect(res.succeeded).toBe(1);
+    expect(res.credits_charged).toBe(100);
+    // 2 polls
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      "https://api.webclaw.io/v1/lead/batch/lb_1",
+    );
+  });
+
+  it("waitForLeadBatch returns on failed status", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ ...doneRes, status: "failed", error: "batch failed" }),
+    );
+    const res = await client().waitForLeadBatch("lb_1", { interval: 10 });
+    expect(res.status).toBe("failed");
+    expect(res.error).toBe("batch failed");
+  });
+
+  it("leadBatch start is not aborted by the client timeout", async () => {
+    const wc = client({ timeout: 20 });
+    // Resolve the start after the 20ms client timeout would have fired;
+    // start calls disable the per-request deadline, so it still resolves.
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) =>
+          setTimeout(() => resolve(jsonResponse(startRes)), 60),
+        ),
+    );
+    const res = await wc.leadBatch(["https://resend.com"]);
+    expect(res.id).toBe("lb_1");
   });
 });
 

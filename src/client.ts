@@ -27,6 +27,12 @@ import type {
   EndpointsResponse,
   ExtractRequest,
   ExtractResponse,
+  LeadBatchOptions,
+  LeadBatchPollOptions,
+  LeadBatchResponse,
+  LeadBatchStartResponse,
+  LeadOptions,
+  LeadResponse,
   MapRequest,
   MapResponse,
   ResearchPollOptions,
@@ -158,6 +164,90 @@ export class Webclaw {
   async extract(params: ExtractRequest): Promise<ExtractResponse> {
     if (!params.url) throw new Error("url is required");
     return this.post<ExtractResponse>("/v1/extract", params);
+  }
+
+  /**
+   * Enrich a company lead from its website using an LLM.
+   *
+   * Fetches the URL and returns a structured company profile — name,
+   * summary, socials, tech stack, pricing, and contact emails, plus
+   * `people`: founders and team members, each with their LinkedIn and X
+   * links where found (`people_source` records how they were sourced).
+   *
+   * Pricing: a flat 100 credits per successful lead.
+   *
+   * @param url - The company website to enrich.
+   * @param options - Cache control (`no_cache`).
+   * @returns The enriched lead plus its cache status and billing.
+   */
+  async lead(url: string, options: LeadOptions = {}): Promise<LeadResponse> {
+    if (!url) throw new Error("url is required");
+    return this.post<LeadResponse>("/v1/lead", { url, ...options });
+  }
+
+  /**
+   * Start an async batch that enriches up to 25 company leads at once.
+   *
+   * Each URL is enriched into the same structured profile that
+   * {@link lead} returns. The job runs in the background: this call
+   * returns immediately with a job id and the number of URLs accepted
+   * (the server validates and dedupes `urls`). Poll {@link getLeadBatch}
+   * — or block via {@link waitForLeadBatch} — for results.
+   *
+   * Pricing: a flat 100 credits per *successful* lead; errored URLs are
+   * not billed.
+   *
+   * @param urls - 1..25 company website URLs. Validated/deduped server-side.
+   * @param options - Cache control (`no_cache`).
+   * @returns The job id, accepted URL count, and per-URL credit cost.
+   * @throws {CreditLimitError} On insufficient credits or an inactive plan (402).
+   * @throws {WebclawError} If `urls` is empty or has more than 25 entries (400).
+   */
+  async leadBatch(
+    urls: string[],
+    options: LeadBatchOptions = {},
+  ): Promise<LeadBatchStartResponse> {
+    if (!urls?.length) throw new Error("urls must be a non-empty array");
+    // Async start: no per-request timeout. Results are awaited via polling
+    // ({@link getLeadBatch}/{@link waitForLeadBatch}), which keeps its own deadline.
+    return this.post<LeadBatchStartResponse>(
+      "/v1/lead/batch",
+      { urls, ...options },
+      null,
+    );
+  }
+
+  /**
+   * Get the current status and results of a lead-batch job without waiting.
+   * @param id - Batch job id returned by {@link leadBatch}.
+   * @returns Current status, counts, billing, and any per-URL results so far.
+   * @throws {NotFoundError} If the batch job does not exist or isn't yours (404).
+   */
+  async getLeadBatch(id: string): Promise<LeadBatchResponse> {
+    return this.get<LeadBatchResponse>(
+      `/v1/lead/batch/${encodeURIComponent(id)}`,
+    );
+  }
+
+  /**
+   * Poll a lead-batch job by id until it's `completed` or `failed`.
+   * Same ergonomics as {@link waitForCrawl} / {@link waitForResearch}.
+   * @param id - Batch job id returned by {@link leadBatch}.
+   * @param opts - Polling interval and max wait override.
+   * @returns The finished job with all per-URL results and final billing.
+   * @throws {WebclawError} If polling times out before the job finishes.
+   */
+  async waitForLeadBatch(
+    id: string,
+    opts: LeadBatchPollOptions = {},
+  ): Promise<LeadBatchResponse> {
+    const interval = opts.interval ?? 2_000;
+    const maxWait = opts.maxWait ?? 600_000;
+    return pollUntilDone(
+      () => this.getLeadBatch(id),
+      (r) => r.status === "completed" || r.status === "failed",
+      { interval, timeout: maxWait },
+    );
   }
 
   /**

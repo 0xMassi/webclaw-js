@@ -191,6 +191,31 @@ const result2 = await client.extract({
 console.log(result2.data);
 ```
 
+### Lead Enrichment API
+
+Turn a company URL into a structured lead — name, summary, socials, tech stack, pricing, and contact emails, plus `people`: founders and team members, each with their LinkedIn and X links where found. The `people` list is assembled via web search.
+
+> **Pricing:** a flat **100 credits** per successful lead.
+
+```typescript
+const result = await client.lead("https://resend.com");
+
+result.url                     // "https://resend.com"
+result.domain                  // "resend.com"
+result.lead.company_name       // "Resend"
+result.lead.summary            // "Email API for developers."
+result.lead.socials            // { linkedin?, x?, github? }
+result.lead.tech               // ["Next.js", "React", "AWS"]
+result.lead.pricing            // [{ plan: "Free", price: "$0" }, ...]
+result.lead.emails             // [{ type: "support", email: "support@resend.com" }, ...]
+result.lead.people             // [{ name: "Zeno Rocha", role: "CEO", linkedin: "…", x: "…" }, ...]
+result.people_source           // "web_search"
+result.cache                   // "hit" | "miss"
+result.credits                 // 100
+```
+
+Every field on `result.lead` is optional — the extractor fills in whatever it can find. Each person's `linkedin` and `x` are `null` when none was found. Pass `{ no_cache: true }` to force a fresh crawl.
+
 ### Summarize
 
 Generate a concise summary of a page's content.
@@ -525,6 +550,8 @@ import type {
   SearchResponse,
   ExtractRequest,
   ExtractResponse,
+  LeadRequest,
+  LeadResponse,
   ResearchRequest,
   ResearchResponse,
   WatchCreateRequest,

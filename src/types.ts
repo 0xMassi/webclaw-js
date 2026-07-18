@@ -239,6 +239,136 @@ export interface ExtractResponse {
   data: Record<string, unknown>;
 }
 
+// -- POST /v1/lead --
+
+export interface LeadRequest {
+  url: string;
+  no_cache?: boolean;
+}
+
+/** Options accepted by {@link Webclaw#lead} (the request body minus `url`). */
+export type LeadOptions = Omit<LeadRequest, "url">;
+
+/** Social profile links found for a lead. */
+export interface LeadSocials {
+  linkedin?: string;
+  x?: string;
+  github?: string;
+}
+
+/** One pricing plan extracted from a company's pricing page. */
+export interface LeadPricingPlan {
+  plan: string;
+  price: string;
+}
+
+/** A contact email discovered for the company, tagged by kind (e.g. "support", "sales"). */
+export interface LeadEmail {
+  type: string;
+  email: string;
+}
+
+/**
+ * A person (founder, exec, or team member) associated with the company.
+ * Social links are `null` when none was found.
+ */
+export interface LeadPerson {
+  name: string;
+  role: string;
+  linkedin: string | null;
+  x: string | null;
+}
+
+/**
+ * The enriched company profile. Every field is optional — the extractor
+ * fills in whatever it can find on the target site.
+ */
+export interface LeadData {
+  company_name?: string;
+  summary?: string;
+  socials?: LeadSocials;
+  tech?: string[];
+  pricing?: LeadPricingPlan[];
+  emails?: LeadEmail[];
+  people?: LeadPerson[];
+}
+
+export interface LeadResponse {
+  url: string;
+  domain: string;
+  lead: LeadData;
+  /** How `lead.people` were assembled. Currently always via web search. */
+  people_source: "web_search";
+  cache: "hit" | "miss";
+  /** Credits billed. Flat 100 per successful lead. */
+  credits: number;
+}
+
+// -- POST /v1/lead/batch (async) --
+
+export interface LeadBatchRequest {
+  /** 1..25 company website URLs. Validated and deduped server-side. */
+  urls: string[];
+  no_cache?: boolean;
+}
+
+/** Options accepted by {@link Webclaw#leadBatch} (the request body minus `urls`). */
+export type LeadBatchOptions = Omit<LeadBatchRequest, "urls">;
+
+/**
+ * Immediate response of `POST /v1/lead/batch`. The job runs async — poll
+ * `GET /v1/lead/batch/{id}` (via {@link Webclaw#getLeadBatch} /
+ * {@link Webclaw#waitForLeadBatch}) for results.
+ */
+export interface LeadBatchStartResponse {
+  id: string;
+  status: "processing";
+  /** Number of URLs accepted after validation + dedupe. */
+  total: number;
+  /** Credits charged per successful lead. Flat 100. */
+  credits_per_url: number;
+}
+
+export type LeadBatchStatus = "processing" | "completed" | "failed";
+
+/** A successfully enriched URL in a lead-batch job. */
+export interface LeadBatchResultSuccess {
+  url: string;
+  status: "success";
+  domain: string;
+  /** The enriched profile — same shape as the single {@link LeadResponse}'s `lead`. */
+  lead: LeadData;
+  cache: "hit" | "miss";
+}
+
+/** A URL that failed enrichment in a lead-batch job. Not billed. */
+export interface LeadBatchResultError {
+  url: string;
+  status: "error";
+  error: string;
+}
+
+export type LeadBatchResultItem = LeadBatchResultSuccess | LeadBatchResultError;
+
+/** Response shape of `GET /v1/lead/batch/{id}`. */
+export interface LeadBatchResponse {
+  id: string;
+  status: LeadBatchStatus;
+  /** URLs accepted for the job. */
+  total: number;
+  /** URLs processed so far (success + error). */
+  completed: number;
+  /** URLs that produced a lead (each billed 100 credits). */
+  succeeded: number;
+  /** Total credits billed so far (100 per successful lead). */
+  credits_charged: number;
+  results: LeadBatchResultItem[];
+  /** Failure reason when `status` is `failed`, else `null`. */
+  error: string | null;
+  /** ISO-8601 timestamp. */
+  created_at: string;
+}
+
 // -- POST /v1/summarize --
 
 export interface SummarizeRequest {
@@ -542,6 +672,13 @@ export interface ResearchPollOptions {
   /** Polling interval in ms. Default 2000. */
   interval?: number;
   /** Maximum time to wait in ms. Default 600_000 (10 min), 1_200_000 for deep. */
+  maxWait?: number;
+}
+
+export interface LeadBatchPollOptions {
+  /** Polling interval in ms. Default 2000. */
+  interval?: number;
+  /** Maximum time to wait in ms. Default 600_000 (10 min). */
   maxWait?: number;
 }
 
