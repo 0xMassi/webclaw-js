@@ -239,6 +239,136 @@ export interface ExtractResponse {
   data: Record<string, unknown>;
 }
 
+// -- POST /v1/lead --
+
+export interface LeadRequest {
+  url: string;
+  no_cache?: boolean;
+}
+
+/** Options accepted by {@link Webclaw#lead} (the request body minus `url`). */
+export type LeadOptions = Omit<LeadRequest, "url">;
+
+/** Social profile links found for a lead. */
+export interface LeadSocials {
+  linkedin?: string;
+  x?: string;
+  github?: string;
+}
+
+/** One pricing plan extracted from a company's pricing page. */
+export interface LeadPricingPlan {
+  plan: string;
+  price: string;
+}
+
+/** A contact email discovered for the company, tagged by kind (e.g. "support", "sales"). */
+export interface LeadEmail {
+  type: string;
+  email: string;
+}
+
+/**
+ * A person (founder, exec, or team member) associated with the company.
+ * Social links are `null` when none was found.
+ */
+export interface LeadPerson {
+  name: string;
+  role: string;
+  linkedin: string | null;
+  x: string | null;
+}
+
+/**
+ * The enriched company profile. Every field is optional — the extractor
+ * fills in whatever it can find on the target site.
+ */
+export interface LeadData {
+  company_name?: string;
+  summary?: string;
+  socials?: LeadSocials;
+  tech?: string[];
+  pricing?: LeadPricingPlan[];
+  emails?: LeadEmail[];
+  people?: LeadPerson[];
+}
+
+export interface LeadResponse {
+  url: string;
+  domain: string;
+  lead: LeadData;
+  /** How `lead.people` were assembled. Currently always via web search. */
+  people_source: "web_search";
+  cache: "hit" | "miss";
+  /** Credits billed. Flat 100 per successful lead. */
+  credits: number;
+}
+
+// -- POST /v1/lead/batch (async) --
+
+export interface LeadBatchRequest {
+  /** 1..25 company website URLs. Validated and deduped server-side. */
+  urls: string[];
+  no_cache?: boolean;
+}
+
+/** Options accepted by {@link Webclaw#leadBatch} (the request body minus `urls`). */
+export type LeadBatchOptions = Omit<LeadBatchRequest, "urls">;
+
+/**
+ * Immediate response of `POST /v1/lead/batch`. The job runs async — poll
+ * `GET /v1/lead/batch/{id}` (via {@link Webclaw#getLeadBatch} /
+ * {@link Webclaw#waitForLeadBatch}) for results.
+ */
+export interface LeadBatchStartResponse {
+  id: string;
+  status: "processing";
+  /** Number of URLs accepted after validation + dedupe. */
+  total: number;
+  /** Credits charged per successful lead. Flat 100. */
+  credits_per_url: number;
+}
+
+export type LeadBatchStatus = "processing" | "completed" | "failed";
+
+/** A successfully enriched URL in a lead-batch job. */
+export interface LeadBatchResultSuccess {
+  url: string;
+  status: "success";
+  domain: string;
+  /** The enriched profile — same shape as the single {@link LeadResponse}'s `lead`. */
+  lead: LeadData;
+  cache: "hit" | "miss";
+}
+
+/** A URL that failed enrichment in a lead-batch job. Not billed. */
+export interface LeadBatchResultError {
+  url: string;
+  status: "error";
+  error: string;
+}
+
+export type LeadBatchResultItem = LeadBatchResultSuccess | LeadBatchResultError;
+
+/** Response shape of `GET /v1/lead/batch/{id}`. */
+export interface LeadBatchResponse {
+  id: string;
+  status: LeadBatchStatus;
+  /** URLs accepted for the job. */
+  total: number;
+  /** URLs processed so far (success + error). */
+  completed: number;
+  /** URLs that produced a lead (each billed 100 credits). */
+  succeeded: number;
+  /** Total credits billed so far (100 per successful lead). */
+  credits_charged: number;
+  results: LeadBatchResultItem[];
+  /** Failure reason when `status` is `failed`, else `null`. */
+  error: string | null;
+  /** ISO-8601 timestamp. */
+  created_at: string;
+}
+
 // -- POST /v1/summarize --
 
 export interface SummarizeRequest {
@@ -375,6 +505,146 @@ export interface WatchResponse {
   snapshots?: Array<Record<string, unknown>>;
 }
 
+// -- X (Twitter) monitoring endpoints --
+
+/**
+ * What a monitor polls on X.
+ *
+ * - `profile` — a user's timeline (target is a handle, leading `@` stripped).
+ * - `search` — a search query (target is the query string).
+ * - `list` — a list's timeline (target is the numeric list id).
+ * - `replies` — replies to a tweet (target is the tweet id).
+ */
+export type XMonitorKind = "profile" | "search" | "list" | "replies";
+
+export interface CreateXMonitorRequest {
+  /** What to poll. Determines how `target` is interpreted. */
+  kind: XMonitorKind;
+  /**
+   * Handle (leading `@` is stripped), search query, list id, or tweet
+   * id — interpreted per {@link kind}.
+   */
+  target: string;
+  name?: string;
+  /** Poll interval. Default 15, clamped server-side to 2..10080. */
+  interval_minutes?: number;
+  /** Discord/Slack/generic webhook fired on new matches. */
+  webhook_url?: string;
+  /** Match retweets. Default `true`. */
+  include_retweets?: boolean;
+  /** Match replies. Default `true`. */
+  include_replies?: boolean;
+  /** Match quote tweets. Default `true`. */
+  include_quotes?: boolean;
+  /** Minimum likes to match. Default `0`. */
+  min_faves?: number;
+  /** Only match tweets containing this substring. */
+  keyword?: string;
+  /** Only match tweets in this language code. */
+  lang?: string;
+}
+
+/**
+ * Fields accepted by {@link Webclaw#updateXMonitor}. All optional —
+ * only the provided fields are changed.
+ */
+export interface UpdateXMonitorRequest {
+  name?: string;
+  interval_minutes?: number;
+  webhook_url?: string;
+  active?: boolean;
+}
+
+/**
+ * A monitor object.
+ *
+ * `createXMonitor` returns only the core fields (`id`, `kind`, `target`,
+ * `name`, `interval_minutes`, `webhook_url`, `active`); the list/get
+ * endpoints return the full object including match filters and
+ * timestamps. The extra fields are marked optional so both shapes fit
+ * one type.
+ */
+export interface XMonitor {
+  id: string;
+  kind: XMonitorKind;
+  target: string;
+  name?: string;
+  interval_minutes: number;
+  webhook_url?: string;
+  active: boolean;
+  include_retweets?: boolean;
+  include_replies?: boolean;
+  include_quotes?: boolean;
+  min_faves?: number;
+  keyword?: string;
+  lang?: string;
+  last_checked_at?: string;
+  last_matched_at?: string;
+  created_at?: string;
+}
+
+/** Response shape of `GET /v1/x/monitors`. */
+export interface ListXMonitorsResponse {
+  monitors: XMonitor[];
+}
+
+/** Response shape of `PATCH` and `DELETE /v1/x/monitors/{id}`. */
+export interface XMonitorMutationResponse {
+  success: boolean;
+}
+
+/** Response shape of `POST /v1/x/monitors/{id}/check`. */
+export interface XMonitorCheckResponse {
+  status: "checking";
+}
+
+/** Which side of the follow graph {@link ExportXAudienceRequest} walks. */
+export type XAudienceDirection = "followers" | "following";
+
+export interface ExportXAudienceRequest {
+  /**
+   * `@handle` to export. Resolved once (unbilled). Provide `handle`
+   * OR `user_id`.
+   */
+  handle?: string;
+  /**
+   * Pre-resolved numeric user id. Pass the `user_id` from a previous
+   * response back on later pages to skip re-resolving.
+   */
+  user_id?: string;
+  /** Which follow direction to walk. Default `"followers"`. */
+  direction?: XAudienceDirection;
+  /** Opaque cursor from a previous response's `next_cursor`. */
+  cursor?: string;
+  /** Pages to fetch this call. Default 2, clamped server-side to 1..10. */
+  max_pages?: number;
+}
+
+/** One user in an audience export page. */
+export interface XAudienceUser {
+  id: string;
+  screen_name: string;
+  name: string;
+  followers: number;
+  description: string;
+  url: string;
+}
+
+export interface ExportXAudienceResponse {
+  user_id: string;
+  direction: XAudienceDirection;
+  count: number;
+  users: XAudienceUser[];
+  /**
+   * Opaque cursor for the next page, or `null` when the audience is
+   * fully walked. Pass it (with `user_id`) back into
+   * {@link ExportXAudienceRequest} to page.
+   */
+  next_cursor: string | null;
+  pages_fetched: number;
+  credits_charged: number;
+}
+
 // -- Client config --
 
 export interface WebclawConfig {
@@ -402,6 +672,13 @@ export interface ResearchPollOptions {
   /** Polling interval in ms. Default 2000. */
   interval?: number;
   /** Maximum time to wait in ms. Default 600_000 (10 min), 1_200_000 for deep. */
+  maxWait?: number;
+}
+
+export interface LeadBatchPollOptions {
+  /** Polling interval in ms. Default 2000. */
+  interval?: number;
+  /** Maximum time to wait in ms. Default 600_000 (10 min). */
   maxWait?: number;
 }
 
