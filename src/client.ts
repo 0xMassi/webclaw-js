@@ -292,7 +292,8 @@ export class Webclaw {
 
   /**
    * Start a research job and poll until completion.
-   * Deep research uses a 20-minute timeout by default; normal uses 10 minutes.
+   * Every job runs in deep mode server-side, so the default poll timeout
+   * is 20 minutes; pass `opts.maxWait` to override.
    * @param params - Research query and depth options.
    * @param opts - Polling interval and max wait override.
    * @returns Completed research report, sources, and findings.
@@ -312,8 +313,10 @@ export class Webclaw {
     );
 
     const interval = opts.interval ?? 2_000;
-    const defaultMax = params.deep ? 1_200_000 : 600_000;
-    const maxWait = opts.maxWait ?? defaultMax;
+    // The API runs every research job in deep mode (the deprecated
+    // `params.deep` flag is ignored), so always default to the 20-minute
+    // window. An explicit opts.maxWait still wins.
+    const maxWait = opts.maxWait ?? 1_200_000;
 
     return pollUntilDone(
       () => this.getResearchStatus(start.id),
@@ -336,8 +339,8 @@ export class Webclaw {
     opts: ResearchPollOptions = {},
   ): Promise<ResearchResponse> {
     const interval = opts.interval ?? 2_000;
-    // No `deep` hint here since we don't have the original request;
-    // pick the longer window so shallow jobs finish comfortably.
+    // Every research job runs in deep mode, so use the same 20-minute
+    // default window as {@link research}.
     const maxWait = opts.maxWait ?? 1_200_000;
     return pollUntilDone(
       () => this.getResearchStatus(id),

@@ -251,16 +251,17 @@ console.log(result); // { name, colors, fonts, logos, ... }
 
 ### Research
 
-Start an async deep research job. The SDK automatically polls until the job completes.
+Start an async deep research job. The SDK automatically polls until the job completes (up to 20 minutes by default; override with `maxWait`).
+
+> **Note:** every research job now runs in deep mode. The `deep` request flag is deprecated and ignored by the API — don't pass it.
 
 ```typescript
 const result = await client.research(
   {
     query: "How do modern web crawlers handle JavaScript rendering?",
     max_sources: 15,
-    deep: true,
   },
-  { interval: 3_000, maxWait: 600_000 },
+  { interval: 3_000 },
 );
 
 console.log(result.report);

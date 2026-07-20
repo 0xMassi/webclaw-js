@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+.npmrc
 .DS_Store
 # package-lock.json IS tracked: this is a published npm package and we
 # want deterministic installs for CI + contributor parity.

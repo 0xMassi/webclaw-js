@@ -431,6 +431,7 @@ export interface DiffResponse {
 
 export interface ResearchRequest {
   query: string;
+  /** @deprecated Research always runs in deep mode; this flag is ignored by the API. */
   deep?: boolean;
   max_sources?: number;
   max_iterations?: number;
@@ -477,6 +478,7 @@ export interface ResearchResponse {
   findings_count?: number;
   iterations?: number;
   elapsed_ms?: number;
+  /** @deprecated Research always runs in deep mode; this flag is ignored by the API. */
   deep?: boolean;
 }
 
@@ -671,7 +673,7 @@ export interface CrawlPollOptions {
 export interface ResearchPollOptions {
   /** Polling interval in ms. Default 2000. */
   interval?: number;
-  /** Maximum time to wait in ms. Default 600_000 (10 min), 1_200_000 for deep. */
+  /** Maximum time to wait in ms. Default 1_200_000 (20 min) — research always runs in deep mode. */
   maxWait?: number;
 }
 
