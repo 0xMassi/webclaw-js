@@ -46,6 +46,7 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
   WatchCreateRequest,
+  WatchCheckResponse,
   WatchResponse,
   WebclawConfig,
   ListExtractorsResponse,
@@ -390,7 +391,10 @@ export class Webclaw {
     if (limit !== undefined) query.set("limit", String(limit));
     if (offset !== undefined) query.set("offset", String(offset));
     const qs = query.toString();
-    return this.get<WatchResponse[]>(`/v1/watch${qs ? `?${qs}` : ""}`);
+    const response = await this.get<{ watches: WatchResponse[] }>(
+      `/v1/watch${qs ? `?${qs}` : ""}`,
+    );
+    return response.watches;
   }
 
   async watchGet(id: string): Promise<WatchResponse> {
@@ -401,8 +405,8 @@ export class Webclaw {
     await this.del(`/v1/watch/${encodeURIComponent(id)}`);
   }
 
-  async watchCheck(id: string): Promise<WatchResponse> {
-    return this.post<WatchResponse>(
+  async watchCheck(id: string): Promise<WatchCheckResponse> {
+    return this.post<WatchCheckResponse>(
       `/v1/watch/${encodeURIComponent(id)}/check`,
       {},
     );

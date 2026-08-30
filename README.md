@@ -350,7 +350,7 @@ console.log(watch.last_checked_at, watch.last_changed_at);
 
 ```typescript
 const updated = await client.watchCheck("watch_abc123");
-console.log(updated.last_checked_at);
+console.log(updated.status); // "checking"
 ```
 
 **Delete a watch**
