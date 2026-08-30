@@ -45,10 +45,13 @@
   "devDependencies": {
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   },
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.2"
   }
 }
