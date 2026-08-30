@@ -99,24 +99,40 @@ The `data` field is extractor-specific; call `listExtractors()` to discover what
 
 ### Search
 
-Web search with optional parallel scraping of each result page.
+Web search with strict source filters, provider freshness/date/locale hints,
+pagination, and optional parallel scraping of each result page.
 
 ```typescript
 const result = await client.search({
-  query: "web scraping tools 2026",
+  query: "website pain points",
   num_results: 10,
-  scrape: true,
+  include_domains: ["reddit.com"],
+  include_url_prefixes: ["https://www.reddit.com/r/webdesign/comments/"],
+  freshness: "month",
+  page: 1,
+  location: "Austin, Texas, United States",
+  autocorrect: false,
+  scrape: false,
   formats: ["markdown"],
   country: "us",
   lang: "en",
-  topic: "technology",
+  no_cache: true,
 });
 
 for (const r of result.results) {
   console.log(r.title, r.url, r.snippet);
-  console.log(r.markdown); // present when scrape: true
 }
+
+console.log(result.filtered_out_count); // provider hits rejected by strict filters
+console.log(result.applied_filters);
 ```
+
+Use `published_after` / `published_before` (`YYYY-MM-DD`) instead of
+`freshness` when you need explicit provider discovery hints;
+`published_before` is exclusive. These hints do not verify a result's actual
+publication date, so inspect the source timestamp when correctness matters.
+`topic` remains accepted for compatibility but is deprecated and ignored by
+the hosted API.
 
 ### Map
 

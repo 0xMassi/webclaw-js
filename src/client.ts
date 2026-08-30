@@ -272,7 +272,7 @@ export class Webclaw {
 
   /**
    * Perform a web search query, optionally scraping each result page.
-   * @param params - Search query, result count, and optional scrape/format options.
+   * @param params - Search query plus strict source filters and optional provider, pagination, and scrape hints.
    * @returns Search results with optional scraped content per hit.
    */
   async search(params: SearchRequest): Promise<SearchResponse> {

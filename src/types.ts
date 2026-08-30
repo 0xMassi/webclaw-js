@@ -392,14 +392,43 @@ export interface BrandResponse {
 
 // -- POST /v1/search --
 
+/** Provider discovery freshness hint; result publication dates are not verified. */
+export type SearchFreshness = "hour" | "day" | "week" | "month" | "year";
+
 export interface SearchRequest {
   query: string;
   num_results?: number;
+  /** @deprecated Ignored by the hosted API. Use query and the search filters instead. */
   topic?: string;
   scrape?: boolean;
   formats?: string[];
   country?: string;
   lang?: string;
+  include_domains?: string[];
+  exclude_domains?: string[];
+  include_url_prefixes?: string[];
+  freshness?: SearchFreshness;
+  /** Provider discovery hint for results after this YYYY-MM-DD date. */
+  published_after?: string;
+  /** Provider discovery hint with an exclusive YYYY-MM-DD upper bound. */
+  published_before?: string;
+  page?: number;
+  location?: string;
+  autocorrect?: boolean;
+  no_cache?: boolean;
+  /** Maximum acceptable cache age in seconds. */
+  max_cache_age?: number;
+}
+
+export interface SearchAppliedFilters {
+  include_domains?: string[];
+  exclude_domains?: string[];
+  include_url_prefixes?: string[];
+  freshness?: SearchFreshness;
+  published_after?: string;
+  published_before?: string;
+  location?: string;
+  autocorrect?: boolean;
 }
 
 export interface SearchResponse {
@@ -413,6 +442,12 @@ export interface SearchResponse {
     metadata?: Record<string, unknown>;
   }>;
   scrape: boolean;
+  /** Non-default strict source filters and provider hints applied by the server. */
+  applied_filters?: SearchAppliedFilters;
+  /** Results rejected by strict source filtering after provider discovery. */
+  filtered_out_count?: number;
+  /** Provider result page that produced this response. */
+  page?: number;
 }
 
 // -- POST /v1/diff --

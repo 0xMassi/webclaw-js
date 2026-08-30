@@ -634,6 +634,118 @@ describe("brand", () => {
   });
 });
 
+// ---- POST /v1/search ----
+
+describe("search", () => {
+  it("returns filtered search metadata", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        query: "python pain points",
+        results: [
+          {
+            title: "Post",
+            url: "https://www.reddit.com/r/Python/comments/abc/post/",
+            snippet: "A pain point",
+            position: 1,
+          },
+        ],
+        scrape: false,
+        applied_filters: {
+          include_domains: ["reddit.com"],
+          include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+          freshness: "month",
+          location: "Austin, Texas, United States",
+          autocorrect: false,
+        },
+        filtered_out_count: 3,
+        page: 2,
+      }),
+    );
+
+    const res = await client().search({
+      query: "python pain points",
+      scrape: false,
+    });
+
+    expect(res.results[0].url).toContain("reddit.com/r/Python");
+    expect(res.applied_filters?.freshness).toBe("month");
+    expect(res.filtered_out_count).toBe(3);
+    expect(res.page).toBe(2);
+  });
+
+  it("sends source, freshness, locale, scrape, and cache fields unchanged", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ query: "q", results: [], scrape: false }),
+    );
+
+    await client().search({
+      query: "q",
+      num_results: 10,
+      topic: "news",
+      scrape: false,
+      formats: ["markdown"],
+      country: "us",
+      lang: "en",
+      include_domains: ["reddit.com"],
+      exclude_domains: ["example.com"],
+      include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+      freshness: "month",
+      page: 2,
+      location: "Austin, Texas, United States",
+      autocorrect: false,
+      no_cache: true,
+      max_cache_age: 300,
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(url).toBe("https://api.webclaw.io/v1/search");
+    expect(init.method).toBe("POST");
+    expect(init.headers.Authorization).toBe("Bearer wc_test_key");
+    expect(body).toEqual({
+      query: "q",
+      num_results: 10,
+      topic: "news",
+      scrape: false,
+      formats: ["markdown"],
+      country: "us",
+      lang: "en",
+      include_domains: ["reddit.com"],
+      exclude_domains: ["example.com"],
+      include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+      freshness: "month",
+      page: 2,
+      location: "Austin, Texas, United States",
+      autocorrect: false,
+      no_cache: true,
+      max_cache_age: 300,
+    });
+  });
+
+  it("sends explicit publication date bounds", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ query: "q", results: [], scrape: false }),
+    );
+
+    await client().search({
+      query: "q",
+      published_after: "2026-07-01",
+      published_before: "2026-07-31",
+    });
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.published_after).toBe("2026-07-01");
+    expect(body.published_before).toBe("2026-07-31");
+  });
+
+  it("requires query", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().search({}),
+    ).rejects.toThrow("query is required");
+  });
+});
+
 // ---- Error handling ----
 
 describe("error handling", () => {
