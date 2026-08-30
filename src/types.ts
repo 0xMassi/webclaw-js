@@ -507,6 +507,11 @@ export interface WatchResponse {
   snapshots?: Array<Record<string, unknown>>;
 }
 
+/** Response shape of `POST /v1/watch/{id}/check`. */
+export interface WatchCheckResponse {
+  status: "checking";
+}
+
 // -- X (Twitter) monitoring endpoints --
 
 /**

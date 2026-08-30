@@ -898,7 +898,7 @@ describe("watch endpoints", () => {
   });
 
   it("watchList builds limit/offset query string", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([watch]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [watch], total: 1 }));
     const res = await client().watchList(10, 5);
     expect(res).toHaveLength(1);
     expect(fetchSpy.mock.calls[0][0]).toBe(
@@ -907,7 +907,7 @@ describe("watch endpoints", () => {
   });
 
   it("watchList omits query string when no args", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [], total: 0 }));
     await client().watchList();
     expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/watch");
   });
@@ -923,9 +923,9 @@ describe("watch endpoints", () => {
   });
 
   it("watchCheck POSTs to /v1/watch/{id}/check", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "checking" }));
     const res = await client().watchCheck("watch_1");
-    expect(res.id).toBe("watch_1");
+    expect(res.status).toBe("checking");
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch/watch_1/check",
     );
