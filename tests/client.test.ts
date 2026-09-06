@@ -1267,3 +1267,14 @@ describe("resilient polling", () => {
     ).rejects.toThrow(/consecutive transient errors/);
   });
 });
+
+it("preserves the API extraction field for the json output format", async () => {
+  const extraction = { metadata: { title: "Example" }, content: { markdown: "# Example" } };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ url: "https://example.com", metadata: {}, extraction, cache: { status: "bypass" } }), { status: 200 }));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const client = new Webclaw({ apiKey: "test-key" });
+    const result: ScrapeResponse = await client.scrape({ url: "https://example.com", formats: ["json"] });
+    expect(result.extraction).toEqual(extraction);
+  } finally { vi.unstubAllGlobals(); }
+});

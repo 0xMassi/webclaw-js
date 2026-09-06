@@ -56,6 +56,9 @@ export interface ScrapeResponse {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Full structured extraction returned when formats includes "json". */
+  extraction?: unknown;
+  /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
   json?: unknown;
   cache: { status: "hit" | "miss" | "bypass" };
   warning?: string;
@@ -212,6 +215,9 @@ export interface BatchResultSuccess {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Full structured extraction returned when formats includes "json". */
+  extraction?: unknown;
+  /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
   json?: unknown;
   metadata: PageMetadata;
 }

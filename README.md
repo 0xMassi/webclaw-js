@@ -65,7 +65,7 @@ result.url       // string
 result.markdown  // string | undefined
 result.text      // string | undefined
 result.llm       // string | undefined
-result.json      // unknown | undefined
+result.extraction // unknown | undefined (formats: ["json"])
 result.metadata  // { title?, description?, language?, ... }
 result.cache     // { status: "hit" | "miss" | "bypass" }
 result.warning   // string | undefined
