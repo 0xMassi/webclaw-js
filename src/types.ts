@@ -17,7 +17,8 @@ export interface PageMetadata {
 
 export interface ScrapeRequest {
   url: string;
-  formats?: Format[];
+  formats?: (Format | "extract")[];
+  extract?: Pick<ExtractRequest, "schema" | "prompt">;
   include_selectors?: string[];
   exclude_selectors?: string[];
   only_main_content?: boolean;
@@ -56,6 +57,8 @@ export interface ScrapeResponse {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Requested schema/prompt result when formats includes "extract". */
+  extract?: unknown;
   /** Full structured extraction returned when formats includes "json". */
   extraction?: unknown;
   /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
@@ -215,6 +218,8 @@ export interface BatchResultSuccess {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Requested schema/prompt result when formats includes "extract". */
+  extract?: unknown;
   /** Full structured extraction returned when formats includes "json". */
   extraction?: unknown;
   /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
