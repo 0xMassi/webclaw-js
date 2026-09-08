@@ -350,7 +350,7 @@ console.log("Watch ID:", watch.id);
 
 ```typescript
 const watches = await client.watchList(10, 0); // limit, offset
-for (const w of watches) {
+for (const w of watches.watches) {
   console.log(w.id, w.url, w.active);
 }
 ```
@@ -365,8 +365,9 @@ console.log(watch.last_checked_at, watch.last_changed_at);
 **Trigger an immediate check**
 
 ```typescript
-const updated = await client.watchCheck("watch_abc123");
-console.log(updated.last_checked_at);
+const check = await client.watchCheck("watch_abc123");
+console.log(check.status); // "checking"; the snapshot is produced asynchronously.
+// Fetch watchGet later to inspect its snapshots.
 ```
 
 **Delete a watch**

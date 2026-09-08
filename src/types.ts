@@ -15,14 +15,32 @@ export interface PageMetadata {
 
 // -- POST /v1/scrape --
 
+export type BrowserAction =
+  | { type: "click"; selector: string }
+  | { type: "type"; selector: string; value: string }
+  | { type: "wait"; milliseconds: number }
+  | { type: "scroll"; direction?: string; amount?: number }
+  | { type: "screenshot"; fullPage?: boolean }
+  | { type: "waitForSelector"; selector: string; timeout?: number }
+  | { type: "executeJavascript"; code: string }
+  | { type: "press"; key: string };
+
+export type ScrapeFormat = Format | "extract" | "links" | "rawHtml" | "attributes" | "query";
+
 export interface ScrapeRequest {
   url: string;
-  formats?: (Format | "extract")[];
+  formats?: ScrapeFormat[];
   extract?: Pick<ExtractRequest, "schema" | "prompt">;
   include_selectors?: string[];
   exclude_selectors?: string[];
   only_main_content?: boolean;
   no_cache?: boolean;
+  max_cache_age?: number;
+  mobile?: boolean;
+  screenshot?: boolean;
+  actions?: BrowserAction[];
+  query?: string;
+  attribute_selectors?: Array<{ selector: string; attribute: string }>;
 }
 
 /**
@@ -63,7 +81,16 @@ export interface ScrapeResponse {
   extraction?: unknown;
   /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
   json?: unknown;
-  cache: { status: "hit" | "miss" | "bypass" };
+  cache?: { status: "hit" | "miss" | "bypass" | "skip"; cached_at?: string; age_seconds?: number };
+  links?: Array<Record<string, unknown>>;
+  rawHtml?: string;
+  attributes?: Array<{ selector: string; attribute: string; values: string[] }>;
+  query_answer?: string | null;
+  screenshot?: string;
+  actions_performed?: number;
+  mobile?: boolean;
+  structured_data?: unknown;
+  engine?: Record<string, unknown>;
   warning?: string;
   /** YouTube-only — set when the URL is youtube.com/watch, /shorts, or
    *  youtu.be. Carries channel, duration, view count, tags, etc. */
@@ -80,6 +107,11 @@ export interface CrawlRequest {
   max_depth?: number;
   max_pages?: number;
   use_sitemap?: boolean;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  webhook_url?: string;
+  allow_subdomains?: boolean;
+  allow_external_links?: boolean;
 }
 
 export interface CrawlStartResponse {
@@ -87,7 +119,7 @@ export interface CrawlStartResponse {
   status: "running";
 }
 
-export type CrawlStatus = "running" | "completed" | "failed";
+export type CrawlStatus = "pending" | "running" | "completed" | "failed" | "interrupted";
 
 export interface CrawlPage {
   url: string;
@@ -109,11 +141,17 @@ export interface CrawlStatusResponse {
 
 export interface MapRequest {
   url: string;
+  search?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 export interface MapResponse {
   urls: string[];
   count: number;
+  next_cursor?: string | null;
+  total_indexed?: number;
+  cached?: boolean;
 }
 
 // -- POST /v1/endpoints --
@@ -494,6 +532,7 @@ export interface ResearchStartResponse {
 }
 
 export interface ResearchFinding {
+  evidence?: Array<{ source_url: string; quote: string }>;
   fact: string;
   source_url: string;
   confidence: string;
@@ -506,6 +545,10 @@ export interface ResearchFinding {
 }
 
 export interface ResearchSource {
+  excerpt?: string;
+  retrieved_at?: string;
+  truncated?: boolean;
+  content_sha256?: string;
   url: string;
   title: string;
   words: number;
@@ -514,6 +557,9 @@ export interface ResearchSource {
 }
 
 export interface ResearchResponse {
+  total_pages_analyzed?: number;
+  created_at?: string;
+  error?: string | null;
   id: string;
   query: string;
   status: string;
@@ -543,15 +589,32 @@ export interface WatchCreateRequest {
 export interface WatchResponse {
   id: string;
   url: string;
-  name?: string;
+  name?: string | null;
   interval_minutes: number;
   active: boolean;
-  webhook_url?: string;
-  last_checked_at?: string;
-  last_changed_at?: string;
-  created_at: string;
-  snapshots?: Array<Record<string, unknown>>;
+  webhook_url?: string | null;
+  last_checked_at?: string | null;
+  last_changed_at?: string | null;
+  created_at?: string;
+  snapshots?: WatchSnapshot[];
 }
+
+export interface WatchSnapshot {
+  id: string;
+  content_hash: string;
+  word_count: number;
+  status: string;
+  title?: string | null;
+  diff_summary?: string | null;
+  word_count_delta: number;
+  links_added: number;
+  links_removed: number;
+  checked_at: string;
+}
+
+export interface WatchListResponse { watches: WatchResponse[] }
+/** Acknowledges scheduling; read watchGet() for snapshots after the check finishes. */
+export interface WatchCheckResponse { status: "checking" }
 
 // -- X (Twitter) monitoring endpoints --
 

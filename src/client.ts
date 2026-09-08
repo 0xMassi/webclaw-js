@@ -47,6 +47,8 @@ import type {
   SummarizeResponse,
   WatchCreateRequest,
   WatchResponse,
+  WatchListResponse,
+  WatchCheckResponse,
   WebclawConfig,
   ListExtractorsResponse,
   VerticalScrapeResponse,
@@ -304,11 +306,12 @@ export class Webclaw {
     opts: ResearchPollOptions = {},
   ): Promise<ResearchResponse> {
     if (!params.query) throw new Error("query is required");
+    const { maxIterations, maxSources, ...rest } = params;
     // Async start: no per-request timeout. Completion is awaited via
     // polling below, which enforces its own (interval, maxWait) deadline.
     const start = await this.post<ResearchStartResponse>(
       "/v1/research",
-      params,
+      { ...rest, max_iterations: rest.max_iterations ?? maxIterations, max_sources: rest.max_sources ?? maxSources },
       null,
     );
 
@@ -363,7 +366,7 @@ export class Webclaw {
     const maxWait = opts.maxWait ?? 300_000;
     return pollUntilDone(
       () => this.getCrawlStatus(id),
-      (s) => s.status === "completed" || s.status === "failed",
+      (s) => s.status === "completed" || s.status === "failed" || s.status === "interrupted",
       { interval, timeout: maxWait },
     );
   }
@@ -385,12 +388,12 @@ export class Webclaw {
     return this.post<WatchResponse>("/v1/watch", params);
   }
 
-  async watchList(limit?: number, offset?: number): Promise<WatchResponse[]> {
+  async watchList(limit?: number, offset?: number): Promise<WatchListResponse> {
     const query = new URLSearchParams();
     if (limit !== undefined) query.set("limit", String(limit));
     if (offset !== undefined) query.set("offset", String(offset));
     const qs = query.toString();
-    return this.get<WatchResponse[]>(`/v1/watch${qs ? `?${qs}` : ""}`);
+    return this.get<WatchListResponse>(`/v1/watch${qs ? `?${qs}` : ""}`);
   }
 
   async watchGet(id: string): Promise<WatchResponse> {
@@ -401,8 +404,8 @@ export class Webclaw {
     await this.del(`/v1/watch/${encodeURIComponent(id)}`);
   }
 
-  async watchCheck(id: string): Promise<WatchResponse> {
-    return this.post<WatchResponse>(
+  async watchCheck(id: string): Promise<WatchCheckResponse> {
+    return this.post<WatchCheckResponse>(
       `/v1/watch/${encodeURIComponent(id)}/check`,
       {},
     );
@@ -693,7 +696,7 @@ export class CrawlJob {
 
     return pollUntilDone(
       () => this.getStatus(),
-      (s) => s.status === "completed" || s.status === "failed",
+      (s) => s.status === "completed" || s.status === "failed" || s.status === "interrupted",
       { interval, timeout: maxWait },
     );
   }

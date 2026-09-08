@@ -111,7 +111,7 @@ describe("scrape", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(scrapeRes));
     const res = await client().scrape({ url: "https://example.com" });
     expect(res.markdown).toBe("# Hello");
-    expect(res.cache.status).toBe("miss");
+    expect(res.cache?.status).toBe("miss");
   });
 
   it("sends all optional params", async () => {
@@ -1004,16 +1004,16 @@ describe("watch endpoints", () => {
   });
 
   it("watchList builds limit/offset query string", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([watch]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [watch] }));
     const res = await client().watchList(10, 5);
-    expect(res).toHaveLength(1);
+    expect(res.watches).toHaveLength(1);
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch?limit=10&offset=5",
     );
   });
 
   it("watchList omits query string when no args", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [] }));
     await client().watchList();
     expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/watch");
   });
@@ -1029,9 +1029,9 @@ describe("watch endpoints", () => {
   });
 
   it("watchCheck POSTs to /v1/watch/{id}/check", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "checking" }));
     const res = await client().watchCheck("watch_1");
-    expect(res.id).toBe("watch_1");
+    expect(res.status).toBe("checking");
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch/watch_1/check",
     );
@@ -1393,4 +1393,55 @@ it("scrape sends extract options and preserves mixed output", async () => {
   expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ url: "https://example.com", formats: ["markdown", "extract"], extract: options });
   expect(result.markdown).toBe("# Example");
   expect(result.extract).toEqual({ title: "Example" });
+});
+
+describe("staging contract regressions", () => {
+  it("preserves map continuation fields and sends the cursor on the next request", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ urls: ["https://example.com/docs"], count: 1, next_cursor: "page/2", total_indexed: 2, cached: true }));
+    const first = await client().map({ url: "https://example.com", search: "docs", limit: 1 });
+    expect(first.total_indexed).toBe(2);
+    expect(first.cached).toBe(true);
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ urls: [], count: 0, next_cursor: null }));
+    await client().map({ url: "https://example.com", cursor: first.next_cursor! });
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body)).toEqual({ url: "https://example.com", cursor: "page/2" });
+  });
+
+  it("forwards mobile/cache/attribute options and preserves extraction outputs", async () => {
+    const request = { url: "https://example.com", formats: ["attributes", "rawHtml"] as const, mobile: true, max_cache_age: 0, attribute_selectors: [{ selector: "a", attribute: "href" }] };
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ url: request.url, attributes: [{ selector: "a", attribute: "href", values: ["/docs"] }], rawHtml: "<a href='/docs'>Docs</a>", engine: { engine: "http" }, mobile: true }));
+    const result = await client().scrape({ ...request, formats: [...request.formats] });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual(request);
+    expect(result.attributes?.[0].values).toEqual(["/docs"]);
+    expect(result.rawHtml).toContain("/docs");
+    expect(result.engine).toEqual({ engine: "http" });
+  });
+
+  it("preserves watch snapshots and nullable timestamps", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "watch_1", url: "https://example.com", active: true, last_changed_at: null, snapshots: [{ id: "snapshot", links_added: 2, links_removed: 1, checked_at: "2026-09-08T00:00:00Z" }] }));
+    const result = await client().watchGet("watch_1");
+    expect(result.last_changed_at).toBeNull();
+    expect(result.snapshots?.[0].links_added).toBe(2);
+  });
+
+  it("stops both crawl polling APIs on interrupted jobs", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_1", status: "interrupted", pages: [], total: 1, completed: 0, errors: 0 }));
+    expect((await client().waitForCrawl("crawl_1", { interval: 1, maxWait: 20 })).status).toBe("interrupted");
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_2", status: "running" }));
+    const job = await client().crawl({ url: "https://example.com" });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_2", status: "interrupted", pages: [], total: 1, completed: 0, errors: 0 }));
+    expect((await job.waitForCompletion({ interval: 1, maxWait: 20 })).status).toBe("interrupted");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
+
+it("normalizes research aliases and preserves source evidence through polling", async () => {
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "res_1", status: "processing" }));
+  const source = { url: "https://example.com", title: "Example", words: 4, excerpt: "Source text", content_sha256: "abc", retrieved_at: "2026-09-08T00:00:00Z", truncated: false };
+  const finding = { fact: "Example", source_url: source.url, confidence: "high", evidence: [{ source_url: source.url, quote: "Source text" }] };
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "res_1", query: "Example", status: "completed", sources: [source], findings: [finding] }));
+  const result = await client().research({ query: "Example", maxIterations: 2, maxSources: 5, max_iterations: 1 }, { interval: 1, maxWait: 100 });
+  expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ query: "Example", max_iterations: 1, max_sources: 5 });
+  expect(result.sources?.[0]).toEqual(source);
+  expect(result.findings?.[0].evidence?.[0].quote).toBe("Source text");
 });
