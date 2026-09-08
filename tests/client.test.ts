@@ -330,14 +330,12 @@ describe("endpoints", () => {
 
   it("throws WebclawError with the server error on 400", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "invalid url" }, 400));
-    try {
-      await client().endpoints({ url: "not-a-url" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(WebclawError);
-      expect((err as WebclawError).status).toBe(400);
-      expect((err as WebclawError).message).toBe("invalid url");
-    }
+    const request = client().endpoints({ url: "not-a-url" });
+    await expect(request).rejects.toBeInstanceOf(WebclawError);
+    await expect(request).rejects.toMatchObject({
+      status: 400,
+      message: "invalid url",
+    });
   });
 });
 
@@ -612,7 +610,7 @@ describe("lead batch", () => {
 // ---- POST /v1/summarize ----
 
 describe("summarize", () => {
-  it("returns summary text", async () => {
+  it("posts the summary options and returns summary text", async () => {
     const sumRes: SummarizeResponse = { summary: "A short summary." };
     fetchSpy.mockResolvedValueOnce(jsonResponse(sumRes));
     const res = await client().summarize({
@@ -620,17 +618,28 @@ describe("summarize", () => {
       max_sentences: 3,
     });
     expect(res.summary).toBe("A short summary.");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/summarize");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({
+      url: "https://example.com",
+      max_sentences: 3,
+    });
   });
 });
 
 // ---- POST /v1/brand ----
 
 describe("brand", () => {
-  it("returns brand data", async () => {
+  it("posts the brand URL and returns brand data", async () => {
     const brandRes = { name: "Acme", colors: ["#fff"] };
     fetchSpy.mockResolvedValueOnce(jsonResponse(brandRes));
     const res = await client().brand({ url: "https://acme.com" });
     expect(res.name).toBe("Acme");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/brand");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ url: "https://acme.com" });
   });
 });
 
@@ -762,28 +771,24 @@ describe("error handling", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Credit limit reached" }, 402),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(CreditLimitError);
-      expect((err as CreditLimitError).status).toBe(402);
-      expect((err as CreditLimitError).message).toBe("Credit limit reached");
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(CreditLimitError);
+    await expect(request).rejects.toMatchObject({
+      status: 402,
+      message: "Credit limit reached",
+    });
   });
 
   it("throws ScopeError on 403", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "scope 'crawl' denied" }, 403),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ScopeError);
-      expect((err as ScopeError).status).toBe(403);
-      expect((err as ScopeError).message).toBe("scope 'crawl' denied");
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(ScopeError);
+    await expect(request).rejects.toMatchObject({
+      status: 403,
+      message: "scope 'crawl' denied",
+    });
   });
 
   it("throws NotFoundError on 404", async () => {
@@ -800,26 +805,18 @@ describe("error handling", () => {
         headers: { "retry-after": "30" },
       }),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(RateLimitError);
-      expect((err as RateLimitError).retryAfter).toBe(30);
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(RateLimitError);
+    await expect(request).rejects.toHaveProperty("retryAfter", 30);
   });
 
   it("throws WebclawError on other status codes", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Internal error" }, 500),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(WebclawError);
-      expect((err as WebclawError).status).toBe(500);
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(WebclawError);
+    await expect(request).rejects.toHaveProperty("status", 500);
   });
 
   it("throws WebclawError on network failure", async () => {
@@ -848,12 +845,9 @@ describe("error handling", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Custom server error" }, 502),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect((err as WebclawError).message).toBe("Custom server error");
-    }
+    await expect(
+      client().scrape({ url: "https://example.com" }),
+    ).rejects.toHaveProperty("message", "Custom server error");
   });
 
   it("returns undefined on a non-204 success with an empty body", async () => {
@@ -1378,4 +1372,25 @@ describe("resilient polling", () => {
       job.waitForCompletion({ interval: 1, maxWait: 5_000 }),
     ).rejects.toThrow(/consecutive transient errors/);
   });
+});
+
+it("preserves the API extraction field for the json output format", async () => {
+  const extraction = { metadata: { title: "Example" }, content: { markdown: "# Example" } };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ url: "https://example.com", metadata: {}, extraction, cache: { status: "bypass" } }), { status: 200 }));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const client = new Webclaw({ apiKey: "test-key" });
+    const result: ScrapeResponse = await client.scrape({ url: "https://example.com", formats: ["json"] });
+    expect(result.extraction).toEqual(extraction);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+// Additive scrape extraction must preserve both outputs and send the nested options.
+it("scrape sends extract options and preserves mixed output", async () => {
+  const options = { schema: { type: "object", properties: { title: { type: "string" } } }, prompt: "Use the page heading" };
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ url: "https://example.com", markdown: "# Example", extract: { title: "Example" } }));
+  const result = await client().scrape({ url: "https://example.com", formats: ["markdown", "extract"], extract: options });
+  expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ url: "https://example.com", formats: ["markdown", "extract"], extract: options });
+  expect(result.markdown).toBe("# Example");
+  expect(result.extract).toEqual({ title: "Example" });
 });
