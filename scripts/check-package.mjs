@@ -31,6 +31,9 @@ try {
       baseUrl: `http://127.0.0.1:${server.address().port}`,
       timeout: 2000,
     });
+    for (const method of ["lead", "leadBatch", "getLeadBatch", "waitForLeadBatch"]) {
+      assert.equal(method in client, false, `${method} must not be exposed`);
+    }
     const body = { url: "https://example.com", formats: ["markdown"] };
     assert.deepEqual(await client.scrape(body), response);
     assert.deepEqual(requests.at(-1), {
