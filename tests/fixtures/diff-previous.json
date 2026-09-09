@@ -1,0 +1,24 @@
+{
+  "content": {
+    "code_blocks": [],
+    "images": [],
+    "links": [],
+    "markdown": "# Previous fixture\n\nThe old example text.\n",
+    "plain_text": "Example Domain\n\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n\nLearn more"
+  },
+  "domain_data": {
+    "domain_type": "generic"
+  },
+  "metadata": {
+    "author": null,
+    "description": null,
+    "favicon": "data:,",
+    "image": null,
+    "language": "en",
+    "published_date": null,
+    "site_name": null,
+    "title": "Previous fixture",
+    "url": "https://example.com/",
+    "word_count": 7
+  }
+}

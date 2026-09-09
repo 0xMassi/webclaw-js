@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import diffResponse from "./fixtures/diff-changed.json";
+import diffPrevious from "./fixtures/diff-previous.json";
 import {
   Webclaw,
   WebclawError,
@@ -136,6 +138,21 @@ describe("scrape", () => {
 // ---- POST /v1/crawl + polling ----
 
 describe("crawl", () => {
+  it("preserves failed pages without metadata and nullable extracted metadata", async () => {
+    const response: CrawlStatusResponse = {
+      id: "partial", status: "completed", total: 2, completed: 1, errors: 1,
+      pages: [
+        { url: "https://example.com/failed", error: "fetch failed" },
+        { url: "https://example.com", metadata: { title: null, description: null, language: null } },
+      ],
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(response));
+    const result = await client().getCrawlStatus("partial");
+    expect(result.pages[0].error).toBe("fetch failed");
+    expect(result.pages[0].metadata).toBeUndefined();
+    expect(result.pages[1].metadata?.title).toBeNull();
+  });
+
   it("returns a CrawlJob with the job id", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: "job-1", status: "running" }),
@@ -632,14 +649,33 @@ describe("summarize", () => {
 
 describe("brand", () => {
   it("posts the brand URL and returns brand data", async () => {
-    const brandRes = { name: "Acme", colors: ["#fff"] };
+    const brandRes = { name: "Acme", colors: [{ hex: "#ffffff", usage: "Background", count: 2 }] };
     fetchSpy.mockResolvedValueOnce(jsonResponse(brandRes));
     const res = await client().brand({ url: "https://acme.com" });
     expect(res.name).toBe("Acme");
+    expect(res.colors).toEqual(brandRes.colors);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://api.webclaw.io/v1/brand");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({ url: "https://acme.com" });
+  });
+});
+
+describe("diff", () => {
+  it("preserves the captured flat API response and sends a complete previous extraction", async () => {
+    const previous = diffPrevious;
+    fetchSpy.mockResolvedValueOnce(jsonResponse(diffResponse));
+    const result = await client().diff({ url: "https://example.com", previous });
+    expect(result.status).toBe("Changed");
+    expect(result.text_diff).toContain("-# Previous fixture");
+    expect(result.metadata_changes).toContainEqual({ field: "title", old: "Previous fixture", new: "Example Domain" });
+    expect(result.links_added[0].href).toBe("https://iana.org/domains/example");
+    expect(result.links_removed).toEqual([]);
+    expect(result.word_count_delta).toBe(13);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/diff");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ url: "https://example.com", previous });
   });
 });
 

@@ -73,7 +73,7 @@ result.warning   // string | undefined
 
 ### Vertical extractors
 
-28 site-specific extractors that return typed JSON (GitHub, Reddit, Amazon, YouTube, PyPI, HuggingFace, Trustpilot, etc.) instead of generic markdown. See the [catalog](https://webclaw.io/docs/api/vertical) for the full list.
+Site-specific extractors return structured JSON (GitHub, Reddit, Amazon, YouTube, PyPI, HuggingFace, Trustpilot, etc.) instead of generic markdown. See the [catalog](https://webclaw.io/docs/api/vertical) for the full list.
 
 ```typescript
 // Discover available extractors
@@ -246,15 +246,18 @@ console.log(result.summary);
 
 ### Diff
 
-Detect content changes on a page. Optionally provide a previous state to diff against.
+Compare a page with your most recent cached extraction. Use the same API account for both calls; a missing or expired baseline returns an error.
 
 ```typescript
-const result = await client.diff({
-  url: "https://example.com",
-  previous: { title: "Old Title", body: "Old content..." },
-});
-console.log(result.changes);
+// Establish the cached baseline once, then check for changes later.
+await client.scrape({ url: "https://example.com", formats: ["json"] });
+const result = await client.diff({ url: "https://example.com" });
+console.log(result.status);    // "Same", "Changed", or "New"
+console.log(result.text_diff); // unified diff, or null
+console.log(result.metadata_changes);
 ```
+
+To compare against a saved baseline instead, pass its complete `extraction` as `previous`, including `metadata` and `content`. An arbitrary title/body object is not accepted.
 
 ### Brand
 
@@ -285,12 +288,11 @@ console.log("Sources:", result.sources?.length);
 console.log("Findings:", result.findings?.length);
 ```
 
-You can also poll manually using `getResearchStatus`:
+To inspect an existing job independently, use its saved ID:
 
 ```typescript
-const job = await client.research({ query: "AI trends 2026" });
-// ... or check status independently:
-const status = await client.getResearchStatus(job.id);
+const status = await client.getResearchStatus("your-existing-job-id");
+console.log(status.status);
 ```
 
 ### Crawl

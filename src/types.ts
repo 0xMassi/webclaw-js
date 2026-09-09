@@ -7,9 +7,9 @@
 export type Format = "markdown" | "text" | "llm" | "json";
 
 export interface PageMetadata {
-  title?: string;
-  description?: string;
-  language?: string;
+  title?: string | null;
+  description?: string | null;
+  language?: string | null;
   [key: string]: unknown;
 }
 
@@ -124,7 +124,7 @@ export type CrawlStatus = "pending" | "running" | "completed" | "failed" | "inte
 export interface CrawlPage {
   url: string;
   markdown?: string;
-  metadata: PageMetadata;
+  metadata?: PageMetadata;
   error?: string;
 }
 
@@ -503,12 +503,18 @@ export interface SearchResponse {
 
 export interface DiffRequest {
   url: string;
+  /** Complete previous extraction (metadata and content), not an arbitrary field map.
+   * Omit to compare with this caller's most recent cached extraction. */
   previous?: Record<string, unknown>;
 }
 
 export interface DiffResponse {
-  url: string;
-  changes: Record<string, unknown>;
+  status: "Same" | "Changed" | "New";
+  text_diff: string | null;
+  metadata_changes: Array<{ field: string; old: string | null; new: string | null }>;
+  links_added: Array<{ href: string; text: string }>;
+  links_removed: Array<{ href: string; text: string }>;
+  word_count_delta: number;
 }
 
 // -- POST /v1/research --
