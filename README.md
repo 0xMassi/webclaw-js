@@ -65,7 +65,7 @@ result.url       // string
 result.markdown  // string | undefined
 result.text      // string | undefined
 result.llm       // string | undefined
-result.json      // unknown | undefined
+result.extraction // unknown | undefined (formats: ["json"])
 result.metadata  // { title?, description?, language?, ... }
 result.cache     // { status: "hit" | "miss" | "bypass" }
 result.warning   // string | undefined
@@ -73,7 +73,7 @@ result.warning   // string | undefined
 
 ### Vertical extractors
 
-28 site-specific extractors that return typed JSON (GitHub, Reddit, Amazon, YouTube, PyPI, HuggingFace, Trustpilot, etc.) instead of generic markdown. See the [catalog](https://webclaw.io/docs/api/vertical) for the full list.
+Site-specific extractors return structured JSON (GitHub, Reddit, Amazon, YouTube, PyPI, HuggingFace, Trustpilot, etc.) instead of generic markdown. See the [catalog](https://webclaw.io/docs/api/vertical) for the full list.
 
 ```typescript
 // Discover available extractors
@@ -99,24 +99,40 @@ The `data` field is extractor-specific; call `listExtractors()` to discover what
 
 ### Search
 
-Web search with optional parallel scraping of each result page.
+Web search with strict source filters, provider freshness/date/locale hints,
+pagination, and optional parallel scraping of each result page.
 
 ```typescript
 const result = await client.search({
-  query: "web scraping tools 2026",
+  query: "website pain points",
   num_results: 10,
-  scrape: true,
+  include_domains: ["reddit.com"],
+  include_url_prefixes: ["https://www.reddit.com/r/webdesign/comments/"],
+  freshness: "month",
+  page: 1,
+  location: "Austin, Texas, United States",
+  autocorrect: false,
+  scrape: false,
   formats: ["markdown"],
   country: "us",
   lang: "en",
-  topic: "technology",
+  no_cache: true,
 });
 
 for (const r of result.results) {
   console.log(r.title, r.url, r.snippet);
-  console.log(r.markdown); // present when scrape: true
 }
+
+console.log(result.filtered_out_count); // provider hits rejected by strict filters
+console.log(result.applied_filters);
 ```
+
+Use `published_after` / `published_before` (`YYYY-MM-DD`) instead of
+`freshness` when you need explicit provider discovery hints;
+`published_before` is exclusive. These hints do not verify a result's actual
+publication date, so inspect the source timestamp when correctness matters.
+`topic` remains accepted for compatibility but is deprecated and ignored by
+the hosted API.
 
 ### Map
 
@@ -230,15 +246,18 @@ console.log(result.summary);
 
 ### Diff
 
-Detect content changes on a page. Optionally provide a previous state to diff against.
+Compare a page with your most recent cached extraction. Use the same API account for both calls; a missing or expired baseline returns an error.
 
 ```typescript
-const result = await client.diff({
-  url: "https://example.com",
-  previous: { title: "Old Title", body: "Old content..." },
-});
-console.log(result.changes);
+// Establish the cached baseline once, then check for changes later.
+await client.scrape({ url: "https://example.com", formats: ["json"] });
+const result = await client.diff({ url: "https://example.com" });
+console.log(result.status);    // "Same", "Changed", or "New"
+console.log(result.text_diff); // unified diff, or null
+console.log(result.metadata_changes);
 ```
+
+To compare against a saved baseline instead, pass its complete `extraction` as `previous`, including `metadata` and `content`. An arbitrary title/body object is not accepted.
 
 ### Brand
 
@@ -269,12 +288,11 @@ console.log("Sources:", result.sources?.length);
 console.log("Findings:", result.findings?.length);
 ```
 
-You can also poll manually using `getResearchStatus`:
+To inspect an existing job independently, use its saved ID:
 
 ```typescript
-const job = await client.research({ query: "AI trends 2026" });
-// ... or check status independently:
-const status = await client.getResearchStatus(job.id);
+const status = await client.getResearchStatus("your-existing-job-id");
+console.log(status.status);
 ```
 
 ### Crawl
@@ -334,7 +352,7 @@ console.log("Watch ID:", watch.id);
 
 ```typescript
 const watches = await client.watchList(10, 0); // limit, offset
-for (const w of watches) {
+for (const w of watches.watches) {
   console.log(w.id, w.url, w.active);
 }
 ```
@@ -349,8 +367,9 @@ console.log(watch.last_checked_at, watch.last_changed_at);
 **Trigger an immediate check**
 
 ```typescript
-const updated = await client.watchCheck("watch_abc123");
-console.log(updated.last_checked_at);
+const check = await client.watchCheck("watch_abc123");
+console.log(check.status); // "checking"; the snapshot is produced asynchronously.
+// Fetch watchGet later to inspect its snapshots.
 ```
 
 **Delete a watch**
@@ -574,6 +593,20 @@ import type {
 - Full TypeScript types for every request and response.
 - Automatic polling for async jobs (crawl, research).
 - Node.js 18+.
+
+## Development
+
+Use Node.js 20.19+ for the build and test tools. The SDK itself supports Node.js
+18+; CI checks both ESM and CommonJS builds with real local HTTP requests on
+Node.js 18 and 20.
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run check:package
+```
 
 ## License
 

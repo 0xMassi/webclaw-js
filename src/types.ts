@@ -7,21 +7,40 @@
 export type Format = "markdown" | "text" | "llm" | "json";
 
 export interface PageMetadata {
-  title?: string;
-  description?: string;
-  language?: string;
+  title?: string | null;
+  description?: string | null;
+  language?: string | null;
   [key: string]: unknown;
 }
 
 // -- POST /v1/scrape --
 
+export type BrowserAction =
+  | { type: "click"; selector: string }
+  | { type: "type"; selector: string; value: string }
+  | { type: "wait"; milliseconds: number }
+  | { type: "scroll"; direction?: string; amount?: number }
+  | { type: "screenshot"; fullPage?: boolean }
+  | { type: "waitForSelector"; selector: string; timeout?: number }
+  | { type: "executeJavascript"; code: string }
+  | { type: "press"; key: string };
+
+export type ScrapeFormat = Format | "extract" | "links" | "rawHtml" | "attributes" | "query";
+
 export interface ScrapeRequest {
   url: string;
-  formats?: Format[];
+  formats?: ScrapeFormat[];
+  extract?: Pick<ExtractRequest, "schema" | "prompt">;
   include_selectors?: string[];
   exclude_selectors?: string[];
   only_main_content?: boolean;
   no_cache?: boolean;
+  max_cache_age?: number;
+  mobile?: boolean;
+  screenshot?: boolean;
+  actions?: BrowserAction[];
+  query?: string;
+  attribute_selectors?: Array<{ selector: string; attribute: string }>;
 }
 
 /**
@@ -56,8 +75,22 @@ export interface ScrapeResponse {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Requested schema/prompt result when formats includes "extract". */
+  extract?: unknown;
+  /** Full structured extraction returned when formats includes "json". */
+  extraction?: unknown;
+  /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
   json?: unknown;
-  cache: { status: "hit" | "miss" | "bypass" };
+  cache?: { status: "hit" | "miss" | "bypass" | "skip"; cached_at?: string; age_seconds?: number };
+  links?: Array<Record<string, unknown>>;
+  rawHtml?: string;
+  attributes?: Array<{ selector: string; attribute: string; values: string[] }>;
+  query_answer?: string | null;
+  screenshot?: string;
+  actions_performed?: number;
+  mobile?: boolean;
+  structured_data?: unknown;
+  engine?: Record<string, unknown>;
   warning?: string;
   /** YouTube-only — set when the URL is youtube.com/watch, /shorts, or
    *  youtu.be. Carries channel, duration, view count, tags, etc. */
@@ -74,6 +107,11 @@ export interface CrawlRequest {
   max_depth?: number;
   max_pages?: number;
   use_sitemap?: boolean;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  webhook_url?: string;
+  allow_subdomains?: boolean;
+  allow_external_links?: boolean;
 }
 
 export interface CrawlStartResponse {
@@ -81,12 +119,12 @@ export interface CrawlStartResponse {
   status: "running";
 }
 
-export type CrawlStatus = "running" | "completed" | "failed";
+export type CrawlStatus = "pending" | "running" | "completed" | "failed" | "interrupted";
 
 export interface CrawlPage {
   url: string;
   markdown?: string;
-  metadata: PageMetadata;
+  metadata?: PageMetadata;
   error?: string;
 }
 
@@ -103,11 +141,17 @@ export interface CrawlStatusResponse {
 
 export interface MapRequest {
   url: string;
+  search?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 export interface MapResponse {
   urls: string[];
   count: number;
+  next_cursor?: string | null;
+  total_indexed?: number;
+  cached?: boolean;
 }
 
 // -- POST /v1/endpoints --
@@ -212,6 +256,11 @@ export interface BatchResultSuccess {
   markdown?: string;
   text?: string;
   llm?: string;
+  /** Requested schema/prompt result when formats includes "extract". */
+  extract?: unknown;
+  /** Full structured extraction returned when formats includes "json". */
+  extraction?: unknown;
+  /** @deprecated Older/custom servers only; the Cloud API uses extraction. */
   json?: unknown;
   metadata: PageMetadata;
 }
@@ -392,14 +441,43 @@ export interface BrandResponse {
 
 // -- POST /v1/search --
 
+/** Provider discovery freshness hint; result publication dates are not verified. */
+export type SearchFreshness = "hour" | "day" | "week" | "month" | "year";
+
 export interface SearchRequest {
   query: string;
   num_results?: number;
+  /** @deprecated Ignored by the hosted API. Use query and the search filters instead. */
   topic?: string;
   scrape?: boolean;
   formats?: string[];
   country?: string;
   lang?: string;
+  include_domains?: string[];
+  exclude_domains?: string[];
+  include_url_prefixes?: string[];
+  freshness?: SearchFreshness;
+  /** Provider discovery hint for results after this YYYY-MM-DD date. */
+  published_after?: string;
+  /** Provider discovery hint with an exclusive YYYY-MM-DD upper bound. */
+  published_before?: string;
+  page?: number;
+  location?: string;
+  autocorrect?: boolean;
+  no_cache?: boolean;
+  /** Maximum acceptable cache age in seconds. */
+  max_cache_age?: number;
+}
+
+export interface SearchAppliedFilters {
+  include_domains?: string[];
+  exclude_domains?: string[];
+  include_url_prefixes?: string[];
+  freshness?: SearchFreshness;
+  published_after?: string;
+  published_before?: string;
+  location?: string;
+  autocorrect?: boolean;
 }
 
 export interface SearchResponse {
@@ -413,18 +491,30 @@ export interface SearchResponse {
     metadata?: Record<string, unknown>;
   }>;
   scrape: boolean;
+  /** Non-default strict source filters and provider hints applied by the server. */
+  applied_filters?: SearchAppliedFilters;
+  /** Results rejected by strict source filtering after provider discovery. */
+  filtered_out_count?: number;
+  /** Provider result page that produced this response. */
+  page?: number;
 }
 
 // -- POST /v1/diff --
 
 export interface DiffRequest {
   url: string;
+  /** Complete previous extraction (metadata and content), not an arbitrary field map.
+   * Omit to compare with this caller's most recent cached extraction. */
   previous?: Record<string, unknown>;
 }
 
 export interface DiffResponse {
-  url: string;
-  changes: Record<string, unknown>;
+  status: "Same" | "Changed" | "New";
+  text_diff: string | null;
+  metadata_changes: Array<{ field: string; old: string | null; new: string | null }>;
+  links_added: Array<{ href: string; text: string }>;
+  links_removed: Array<{ href: string; text: string }>;
+  word_count_delta: number;
 }
 
 // -- POST /v1/research --
@@ -448,6 +538,7 @@ export interface ResearchStartResponse {
 }
 
 export interface ResearchFinding {
+  evidence?: Array<{ source_url: string; quote: string }>;
   fact: string;
   source_url: string;
   confidence: string;
@@ -460,6 +551,10 @@ export interface ResearchFinding {
 }
 
 export interface ResearchSource {
+  excerpt?: string;
+  retrieved_at?: string;
+  truncated?: boolean;
+  content_sha256?: string;
   url: string;
   title: string;
   words: number;
@@ -468,6 +563,9 @@ export interface ResearchSource {
 }
 
 export interface ResearchResponse {
+  total_pages_analyzed?: number;
+  created_at?: string;
+  error?: string | null;
   id: string;
   query: string;
   status: string;
@@ -497,15 +595,32 @@ export interface WatchCreateRequest {
 export interface WatchResponse {
   id: string;
   url: string;
-  name?: string;
+  name?: string | null;
   interval_minutes: number;
   active: boolean;
-  webhook_url?: string;
-  last_checked_at?: string;
-  last_changed_at?: string;
-  created_at: string;
-  snapshots?: Array<Record<string, unknown>>;
+  webhook_url?: string | null;
+  last_checked_at?: string | null;
+  last_changed_at?: string | null;
+  created_at?: string;
+  snapshots?: WatchSnapshot[];
 }
+
+export interface WatchSnapshot {
+  id: string;
+  content_hash: string;
+  word_count: number;
+  status: string;
+  title?: string | null;
+  diff_summary?: string | null;
+  word_count_delta: number;
+  links_added: number;
+  links_removed: number;
+  checked_at: string;
+}
+
+export interface WatchListResponse { watches: WatchResponse[] }
+/** Acknowledges scheduling; read watchGet() for snapshots after the check finishes. */
+export interface WatchCheckResponse { status: "checking" }
 
 // -- X (Twitter) monitoring endpoints --
 

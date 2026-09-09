@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import diffResponse from "./fixtures/diff-changed.json";
+import diffPrevious from "./fixtures/diff-previous.json";
 import {
   Webclaw,
   WebclawError,
@@ -111,7 +113,7 @@ describe("scrape", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(scrapeRes));
     const res = await client().scrape({ url: "https://example.com" });
     expect(res.markdown).toBe("# Hello");
-    expect(res.cache.status).toBe("miss");
+    expect(res.cache?.status).toBe("miss");
   });
 
   it("sends all optional params", async () => {
@@ -136,6 +138,21 @@ describe("scrape", () => {
 // ---- POST /v1/crawl + polling ----
 
 describe("crawl", () => {
+  it("preserves failed pages without metadata and nullable extracted metadata", async () => {
+    const response: CrawlStatusResponse = {
+      id: "partial", status: "completed", total: 2, completed: 1, errors: 1,
+      pages: [
+        { url: "https://example.com/failed", error: "fetch failed" },
+        { url: "https://example.com", metadata: { title: null, description: null, language: null } },
+      ],
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(response));
+    const result = await client().getCrawlStatus("partial");
+    expect(result.pages[0].error).toBe("fetch failed");
+    expect(result.pages[0].metadata).toBeUndefined();
+    expect(result.pages[1].metadata?.title).toBeNull();
+  });
+
   it("returns a CrawlJob with the job id", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: "job-1", status: "running" }),
@@ -330,14 +347,12 @@ describe("endpoints", () => {
 
   it("throws WebclawError with the server error on 400", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "invalid url" }, 400));
-    try {
-      await client().endpoints({ url: "not-a-url" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(WebclawError);
-      expect((err as WebclawError).status).toBe(400);
-      expect((err as WebclawError).message).toBe("invalid url");
-    }
+    const request = client().endpoints({ url: "not-a-url" });
+    await expect(request).rejects.toBeInstanceOf(WebclawError);
+    await expect(request).rejects.toMatchObject({
+      status: 400,
+      message: "invalid url",
+    });
   });
 });
 
@@ -612,7 +627,7 @@ describe("lead batch", () => {
 // ---- POST /v1/summarize ----
 
 describe("summarize", () => {
-  it("returns summary text", async () => {
+  it("posts the summary options and returns summary text", async () => {
     const sumRes: SummarizeResponse = { summary: "A short summary." };
     fetchSpy.mockResolvedValueOnce(jsonResponse(sumRes));
     const res = await client().summarize({
@@ -620,17 +635,159 @@ describe("summarize", () => {
       max_sentences: 3,
     });
     expect(res.summary).toBe("A short summary.");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/summarize");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({
+      url: "https://example.com",
+      max_sentences: 3,
+    });
   });
 });
 
 // ---- POST /v1/brand ----
 
 describe("brand", () => {
-  it("returns brand data", async () => {
-    const brandRes = { name: "Acme", colors: ["#fff"] };
+  it("posts the brand URL and returns brand data", async () => {
+    const brandRes = { name: "Acme", colors: [{ hex: "#ffffff", usage: "Background", count: 2 }] };
     fetchSpy.mockResolvedValueOnce(jsonResponse(brandRes));
     const res = await client().brand({ url: "https://acme.com" });
     expect(res.name).toBe("Acme");
+    expect(res.colors).toEqual(brandRes.colors);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/brand");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ url: "https://acme.com" });
+  });
+});
+
+describe("diff", () => {
+  it("preserves the captured flat API response and sends a complete previous extraction", async () => {
+    const previous = diffPrevious;
+    fetchSpy.mockResolvedValueOnce(jsonResponse(diffResponse));
+    const result = await client().diff({ url: "https://example.com", previous });
+    expect(result.status).toBe("Changed");
+    expect(result.text_diff).toContain("-# Previous fixture");
+    expect(result.metadata_changes).toContainEqual({ field: "title", old: "Previous fixture", new: "Example Domain" });
+    expect(result.links_added[0].href).toBe("https://iana.org/domains/example");
+    expect(result.links_removed).toEqual([]);
+    expect(result.word_count_delta).toBe(13);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://api.webclaw.io/v1/diff");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ url: "https://example.com", previous });
+  });
+});
+
+// ---- POST /v1/search ----
+
+describe("search", () => {
+  it("returns filtered search metadata", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        query: "python pain points",
+        results: [
+          {
+            title: "Post",
+            url: "https://www.reddit.com/r/Python/comments/abc/post/",
+            snippet: "A pain point",
+            position: 1,
+          },
+        ],
+        scrape: false,
+        applied_filters: {
+          include_domains: ["reddit.com"],
+          include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+          freshness: "month",
+          location: "Austin, Texas, United States",
+          autocorrect: false,
+        },
+        filtered_out_count: 3,
+        page: 2,
+      }),
+    );
+
+    const res = await client().search({
+      query: "python pain points",
+      scrape: false,
+    });
+
+    expect(res.results[0].url).toContain("reddit.com/r/Python");
+    expect(res.applied_filters?.freshness).toBe("month");
+    expect(res.filtered_out_count).toBe(3);
+    expect(res.page).toBe(2);
+  });
+
+  it("sends source, freshness, locale, scrape, and cache fields unchanged", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ query: "q", results: [], scrape: false }),
+    );
+
+    await client().search({
+      query: "q",
+      num_results: 10,
+      topic: "news",
+      scrape: false,
+      formats: ["markdown"],
+      country: "us",
+      lang: "en",
+      include_domains: ["reddit.com"],
+      exclude_domains: ["example.com"],
+      include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+      freshness: "month",
+      page: 2,
+      location: "Austin, Texas, United States",
+      autocorrect: false,
+      no_cache: true,
+      max_cache_age: 300,
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(url).toBe("https://api.webclaw.io/v1/search");
+    expect(init.method).toBe("POST");
+    expect(init.headers.Authorization).toBe("Bearer wc_test_key");
+    expect(body).toEqual({
+      query: "q",
+      num_results: 10,
+      topic: "news",
+      scrape: false,
+      formats: ["markdown"],
+      country: "us",
+      lang: "en",
+      include_domains: ["reddit.com"],
+      exclude_domains: ["example.com"],
+      include_url_prefixes: ["https://www.reddit.com/r/Python/comments/"],
+      freshness: "month",
+      page: 2,
+      location: "Austin, Texas, United States",
+      autocorrect: false,
+      no_cache: true,
+      max_cache_age: 300,
+    });
+  });
+
+  it("sends explicit publication date bounds", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ query: "q", results: [], scrape: false }),
+    );
+
+    await client().search({
+      query: "q",
+      published_after: "2026-07-01",
+      published_before: "2026-07-31",
+    });
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.published_after).toBe("2026-07-01");
+    expect(body.published_before).toBe("2026-07-31");
+  });
+
+  it("requires query", async () => {
+    await expect(
+      // @ts-expect-error testing runtime guard
+      client().search({}),
+    ).rejects.toThrow("query is required");
   });
 });
 
@@ -650,28 +807,24 @@ describe("error handling", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Credit limit reached" }, 402),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(CreditLimitError);
-      expect((err as CreditLimitError).status).toBe(402);
-      expect((err as CreditLimitError).message).toBe("Credit limit reached");
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(CreditLimitError);
+    await expect(request).rejects.toMatchObject({
+      status: 402,
+      message: "Credit limit reached",
+    });
   });
 
   it("throws ScopeError on 403", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "scope 'crawl' denied" }, 403),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ScopeError);
-      expect((err as ScopeError).status).toBe(403);
-      expect((err as ScopeError).message).toBe("scope 'crawl' denied");
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(ScopeError);
+    await expect(request).rejects.toMatchObject({
+      status: 403,
+      message: "scope 'crawl' denied",
+    });
   });
 
   it("throws NotFoundError on 404", async () => {
@@ -688,26 +841,18 @@ describe("error handling", () => {
         headers: { "retry-after": "30" },
       }),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(RateLimitError);
-      expect((err as RateLimitError).retryAfter).toBe(30);
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(RateLimitError);
+    await expect(request).rejects.toHaveProperty("retryAfter", 30);
   });
 
   it("throws WebclawError on other status codes", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Internal error" }, 500),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(WebclawError);
-      expect((err as WebclawError).status).toBe(500);
-    }
+    const request = client().scrape({ url: "https://example.com" });
+    await expect(request).rejects.toBeInstanceOf(WebclawError);
+    await expect(request).rejects.toHaveProperty("status", 500);
   });
 
   it("throws WebclawError on network failure", async () => {
@@ -736,12 +881,9 @@ describe("error handling", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ error: "Custom server error" }, 502),
     );
-    try {
-      await client().scrape({ url: "https://example.com" });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect((err as WebclawError).message).toBe("Custom server error");
-    }
+    await expect(
+      client().scrape({ url: "https://example.com" }),
+    ).rejects.toHaveProperty("message", "Custom server error");
   });
 
   it("returns undefined on a non-204 success with an empty body", async () => {
@@ -898,16 +1040,16 @@ describe("watch endpoints", () => {
   });
 
   it("watchList builds limit/offset query string", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([watch]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [watch] }));
     const res = await client().watchList(10, 5);
-    expect(res).toHaveLength(1);
+    expect(res.watches).toHaveLength(1);
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch?limit=10&offset=5",
     );
   });
 
   it("watchList omits query string when no args", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ watches: [] }));
     await client().watchList();
     expect(fetchSpy.mock.calls[0][0]).toBe("https://api.webclaw.io/v1/watch");
   });
@@ -923,9 +1065,9 @@ describe("watch endpoints", () => {
   });
 
   it("watchCheck POSTs to /v1/watch/{id}/check", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(watch));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "checking" }));
     const res = await client().watchCheck("watch_1");
-    expect(res.id).toBe("watch_1");
+    expect(res.status).toBe("checking");
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/watch/watch_1/check",
     );
@@ -1266,4 +1408,76 @@ describe("resilient polling", () => {
       job.waitForCompletion({ interval: 1, maxWait: 5_000 }),
     ).rejects.toThrow(/consecutive transient errors/);
   });
+});
+
+it("preserves the API extraction field for the json output format", async () => {
+  const extraction = { metadata: { title: "Example" }, content: { markdown: "# Example" } };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ url: "https://example.com", metadata: {}, extraction, cache: { status: "bypass" } }), { status: 200 }));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const client = new Webclaw({ apiKey: "test-key" });
+    const result: ScrapeResponse = await client.scrape({ url: "https://example.com", formats: ["json"] });
+    expect(result.extraction).toEqual(extraction);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+// Additive scrape extraction must preserve both outputs and send the nested options.
+it("scrape sends extract options and preserves mixed output", async () => {
+  const options = { schema: { type: "object", properties: { title: { type: "string" } } }, prompt: "Use the page heading" };
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ url: "https://example.com", markdown: "# Example", extract: { title: "Example" } }));
+  const result = await client().scrape({ url: "https://example.com", formats: ["markdown", "extract"], extract: options });
+  expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ url: "https://example.com", formats: ["markdown", "extract"], extract: options });
+  expect(result.markdown).toBe("# Example");
+  expect(result.extract).toEqual({ title: "Example" });
+});
+
+describe("staging contract regressions", () => {
+  it("preserves map continuation fields and sends the cursor on the next request", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ urls: ["https://example.com/docs"], count: 1, next_cursor: "page/2", total_indexed: 2, cached: true }));
+    const first = await client().map({ url: "https://example.com", search: "docs", limit: 1 });
+    expect(first.total_indexed).toBe(2);
+    expect(first.cached).toBe(true);
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ urls: [], count: 0, next_cursor: null }));
+    await client().map({ url: "https://example.com", cursor: first.next_cursor! });
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body)).toEqual({ url: "https://example.com", cursor: "page/2" });
+  });
+
+  it("forwards mobile/cache/attribute options and preserves extraction outputs", async () => {
+    const request = { url: "https://example.com", formats: ["attributes", "rawHtml"] as const, mobile: true, max_cache_age: 0, attribute_selectors: [{ selector: "a", attribute: "href" }] };
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ url: request.url, attributes: [{ selector: "a", attribute: "href", values: ["/docs"] }], rawHtml: "<a href='/docs'>Docs</a>", engine: { engine: "http" }, mobile: true }));
+    const result = await client().scrape({ ...request, formats: [...request.formats] });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual(request);
+    expect(result.attributes?.[0].values).toEqual(["/docs"]);
+    expect(result.rawHtml).toContain("/docs");
+    expect(result.engine).toEqual({ engine: "http" });
+  });
+
+  it("preserves watch snapshots and nullable timestamps", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "watch_1", url: "https://example.com", active: true, last_changed_at: null, snapshots: [{ id: "snapshot", links_added: 2, links_removed: 1, checked_at: "2026-09-08T00:00:00Z" }] }));
+    const result = await client().watchGet("watch_1");
+    expect(result.last_changed_at).toBeNull();
+    expect(result.snapshots?.[0].links_added).toBe(2);
+  });
+
+  it("stops both crawl polling APIs on interrupted jobs", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_1", status: "interrupted", pages: [], total: 1, completed: 0, errors: 0 }));
+    expect((await client().waitForCrawl("crawl_1", { interval: 1, maxWait: 20 })).status).toBe("interrupted");
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_2", status: "running" }));
+    const job = await client().crawl({ url: "https://example.com" });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "crawl_2", status: "interrupted", pages: [], total: 1, completed: 0, errors: 0 }));
+    expect((await job.waitForCompletion({ interval: 1, maxWait: 20 })).status).toBe("interrupted");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
+
+it("normalizes research aliases and preserves source evidence through polling", async () => {
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "res_1", status: "processing" }));
+  const source = { url: "https://example.com", title: "Example", words: 4, excerpt: "Source text", content_sha256: "abc", retrieved_at: "2026-09-08T00:00:00Z", truncated: false };
+  const finding = { fact: "Example", source_url: source.url, confidence: "high", evidence: [{ source_url: source.url, quote: "Source text" }] };
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ id: "res_1", query: "Example", status: "completed", sources: [source], findings: [finding] }));
+  const result = await client().research({ query: "Example", maxIterations: 2, maxSources: 5, max_iterations: 1 }, { interval: 1, maxWait: 100 });
+  expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ query: "Example", max_iterations: 1, max_sources: 5 });
+  expect(result.sources?.[0]).toEqual(source);
+  expect(result.findings?.[0].evidence?.[0].quote).toBe("Source text");
 });
