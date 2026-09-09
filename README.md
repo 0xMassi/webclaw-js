@@ -594,6 +594,20 @@ import type {
 - Automatic polling for async jobs (crawl, research).
 - Node.js 18+.
 
+## Development
+
+Use Node.js 20.19+ for the build and test tools. The SDK itself supports Node.js
+18+; CI checks both ESM and CommonJS builds with real local HTTP requests on
+Node.js 18 and 20.
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run check:package
+```
+
 ## License
 
 MIT

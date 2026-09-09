@@ -23,7 +23,8 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.check.json"
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "check:package": "node scripts/check-package.mjs"
   },
   "repository": {
     "type": "git",
@@ -45,7 +46,7 @@
   "devDependencies": {
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.2.7"
+    "vitest": "4.1.11"
   },
   "license": "MIT",
   "engines": {
