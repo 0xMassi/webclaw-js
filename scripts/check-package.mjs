@@ -50,6 +50,6 @@ try {
   assert.equal(requests.length, 4);
   console.log(`ESM and CommonJS HTTP/error checks passed on ${process.version}`);
 } finally {
-  server.closeAllConnections();
+  server.closeAllConnections?.();
   await new Promise((resolve) => server.close(resolve));
 }

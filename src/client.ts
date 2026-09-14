@@ -326,8 +326,8 @@ export class Webclaw {
   // The X analog of the watch endpoints: poll X (profiles, searches,
   // lists, or replies) and fire a webhook on new matches. Paid-only —
   // the server returns 403 (ScopeError) for free/lapsed accounts.
-  // Monitors cost 1 credit per check; audience export costs 1 credit
-  // per page fetched. Max 50 monitors per user.
+  // Monitor checks and audience pages use the tier-specific X rate.
+  // Max 50 monitors per user.
 
   /**
    * Create a monitor that polls X and fires a webhook on new matches.
