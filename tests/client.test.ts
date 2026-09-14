@@ -925,9 +925,10 @@ describe("x monitor endpoints", () => {
   });
 
   it("getXMonitor GETs a single monitor by encoded id", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(monitor));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ...monitor, checks: [{ id: "check-1", checked_at: "2026-09-14T14:00:00Z", result: { baseline: true } }] }));
     const res = await client().getXMonitor("xmon/1");
     expect(res.id).toBe("xmon_1");
+    expect(res.checks?.[0].result.baseline).toBe(true);
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://api.webclaw.io/v1/x/monitors/xmon%2F1",
     );

@@ -568,6 +568,8 @@ export interface XMonitor {
   last_checked_at?: string;
   last_matched_at?: string;
   created_at?: string;
+  /** Latest 20 saved checks, returned by getXMonitor only. */
+  checks?: Array<{ id: string; checked_at: string; result: Record<string, unknown> }>;
 }
 
 /** Response shape of `GET /v1/x/monitors`. */
