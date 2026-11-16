@@ -12,6 +12,7 @@ import {
   TimeoutError,
 } from "../src/index.js";
 import type {
+  ActionResult,
   ScrapeResponse,
   CrawlStatusResponse,
   MapResponse,
@@ -1213,6 +1214,14 @@ it("scrape sends extract options and preserves mixed output", async () => {
 });
 
 describe("staging contract regressions", () => {
+  it("types actions_performed as the per-action results the server returns", async () => {
+    const actions: ActionResult[] = [{ action: "click", success: true }, { action: "waitForSelector", success: false, error: "timeout" }];
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ url: "https://example.com", actions_performed: actions }));
+    const result = await client().scrape({ url: "https://example.com" });
+    expect(result.actions_performed).toEqual(actions);
+    expect(result.actions_performed?.[1].error).toBe("timeout");
+  });
+
   it("preserves map continuation fields and sends the cursor on the next request", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ urls: ["https://example.com/docs"], count: 1, next_cursor: "page/2", total_indexed: 2, cached: true }));
     const first = await client().map({ url: "https://example.com", search: "docs", limit: 1 });
