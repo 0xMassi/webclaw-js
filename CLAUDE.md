@@ -26,6 +26,12 @@ npx vitest run -t "swallows a transient 429"   # run one test by name
 npx vitest                                      # watch mode
 ```
 
+CI (`.github/workflows/ci.yml`) runs `typecheck` → `test` → `build` on Node 18
+and 20 for every push to `main` and every PR. Keep all three green; `build` is
+part of the gate because tsup's `dts` step catches type errors `tsc --noEmit`
+misses (`tsconfig.json` excludes `tests/`, so test-only type errors surface
+only via vitest).
+
 ## Architecture
 
 Everything substantive is in four files under `src/` (re-exported from `index.ts`):
@@ -37,11 +43,15 @@ Everything substantive is in four files under `src/` (re-exported from `index.ts
 | `errors.ts` | `WebclawError` base + typed subclasses |
 | `index.ts` | Barrel: `export { Webclaw, CrawlJob }` + `export *` of types and errors |
 
-**HTTP layer** — every method funnels through private `request<T>()`, which sets
-the `Authorization: Bearer <apiKey>` header, applies an `AbortController`
-timeout, and maps the HTTP status to an error class. `post`/`get`/`del` are thin
-wrappers over it. To add an endpoint: add types to `types.ts`, add a guarded
-method to `client.ts` calling `this.post`/`this.get`.
+**HTTP layer** — every method funnels through private `request<T>()`, which
+applies an `AbortController` timeout and maps the HTTP status to an error class.
+The `post`/`get`/`patch`/`del` wrappers set the method and the
+`Authorization: Bearer <apiKey>` header; `request()` itself sets no headers.
+Only `post` accepts a `timeoutMs` override. To add an endpoint: add types to
+`types.ts`, a method to `client.ts` calling the right wrapper, tests, and a
+README section (endpoint commits touch all four). A DELETE that returns a body
+calls `request` directly, because `del` is `Promise<void>` — pass the
+`Authorization` header yourself, as `deleteXMonitor` does.
 
 **Error mapping** (single source of truth in `request()`):
 
@@ -49,38 +59,53 @@ method to `client.ts` calling `this.post`/`this.get`.
 |--------|-------------|-------|
 | 401 | `AuthenticationError` | |
 | 402 | `CreditLimitError` | |
-| 403 | `ScopeError` | API key missing a scope |
+| 403 | `ScopeError` | API key missing a scope; also paid-only endpoints (X monitors/audience) |
 | 404 | `NotFoundError` | |
 | 429 | `RateLimitError` | carries `.retryAfter` (seconds, from header) |
 | other non-2xx | `WebclawError` | `.status` + `.body` |
 | abort/timeout | `TimeoutError` | |
+| network failure, or 2xx with invalid JSON | `WebclawError` | no `.status` on network failure |
 
 Error message prefers the JSON `{ "error": ... }` field, falling back to raw body then `statusText`.
 
-**Async jobs** — two shapes, intentionally asymmetric:
-- `crawl()` returns a **`CrawlJob` handle** → `.waitForCompletion()` / `.getStatus()`.
-- `research()` **auto-polls inline** and returns the final `ResearchResponse`.
-- `waitForCrawl(id)` / `waitForResearch(id)` poll a job you already have an id for (mirrors sdk-go's `WaitFor*`).
+**Async jobs** — three shapes, intentionally asymmetric:
 
-Both run through `pollUntilDone`, which polls until status is `completed`/`failed`
-or the outer deadline passes.
+| Method | Shape | Poll default (`interval`, `maxWait`) |
+|--------|-------|--------------------------------------|
+| `crawl()` | returns a **`CrawlJob` handle** → `.waitForCompletion()` / `.getStatus()` | 2s, 5 min |
+| `research()` | **auto-polls inline**, returns the final `ResearchResponse` | 2s, 20 min |
+| `leadBatch()` | returns a **start response** (id + accepted count) → `waitForLeadBatch(id)` | 2s, 10 min |
+
+`waitForCrawl(id)` / `waitForResearch(id)` / `waitForLeadBatch(id)` poll a job
+you already have an id for (mirrors sdk-go's `WaitFor*`). All run through
+`pollUntilDone`, which polls until status is `completed`/`failed` or the outer
+deadline passes.
 
 ## Important Details
 
-- **Async *start* calls disable the per-request timeout** (`crawl`/`research`
-  pass `null` as the `timeoutMs` arg to `post`). The start can outlast the
-  30s sync budget; completion is bounded by the poll loop's own
+- **Async *start* calls disable the per-request timeout** (`crawl`/`research`/
+  `leadBatch` pass `null` as the `timeoutMs` arg to `post`). The start can
+  outlast the 30s sync budget; completion is bounded by the poll loop's own
   `(interval, maxWait)` deadline instead. Don't "fix" this by adding a timeout.
 - **`pollUntilDone` is resilience-tuned**: a per-poll `TimeoutError` or `429`
   is *transient* — swallowed, loop continues (deep research can take ~20 min
   with sub-second polls). 429 honors `retry-after`. Bails after
   `MAX_TRANSIENT_POLL_FAILURES` (5) consecutive transient errors so a broken
   endpoint fails fast. Any other error (404/401/5xx/network) propagates immediately.
+- **Research always runs deep server-side.** `ResearchRequest.deep` is
+  deprecated and ignored by the API; both `research()` and `waitForResearch()`
+  default to the 20-minute window regardless. An explicit `opts.maxWait` wins.
 - **Empty 2xx body → `undefined`**: `request()` reads `res.text()` and returns
   `undefined as T` for empty bodies (204, or 200/202 no-content like
   `watchCheck`/`watchDelete`). Never `JSON.parse("")`.
-- **Every method has a runtime guard** (`if (!params.url) throw new Error("url is required")`)
-  on top of the TS types. Tests exercise these with `// @ts-expect-error` — keep the pattern when adding methods.
+- **Methods that take a request object or URL have a runtime guard** on required
+  fields (`if (!params.url) throw new Error("url is required")`) on top of the TS
+  types. Id-only methods (`getXMonitor`, `watchGet`, …) don't. Tests exercise the
+  guards with `// @ts-expect-error` — keep the pattern when adding methods.
+- **Wire fields stay snake_case** (`next_cursor`, `people_source`, `url_patterns`)
+  — the SDK does not camelCase-map the API. Method names and options objects
+  (`maxWait`, `noCache` where it exists) are camelCase; response bodies mirror
+  the server verbatim.
 - **Path params are `encodeURIComponent`'d** (ids can contain `/`).
 - **Imports use `.js` extensions** on relative paths (`./errors.js`) even though
   source is `.ts` — required for the ESM build. Match it.
@@ -91,6 +116,27 @@ or the outer deadline passes.
   `ResearchFinding.claim`) for back-compat. Don't delete them; add the snake_case successor alongside.
 - **Cross-SDK parity**: sdk-js, sdk-python, and sdk-go expose identical endpoint
   coverage. A new endpoint or response field here should be mirrored in the other two.
+
+## Testing
+
+One file, `tests/client.test.ts`, **no network**. `beforeEach`
+installs a `vi.stubGlobal("fetch", vi.fn())` spy; the local `jsonResponse(body,
+status, headers)` helper builds mock `Response`s. Tests import from
+`../src/index.js` (the barrel), not individual modules — so a missing export is
+a test failure. Group new tests in a `describe` named after the method, and
+cover: happy path, the runtime guard (with `// @ts-expect-error`), and the
+request shape (URL + method + `Authorization` header) via `fetchSpy.mock.calls`.
+
+Poll-loop tests use vitest fake timers — when touching `pollUntilDone`, check
+the `research polling` / `resilient polling` / `async start timeout` describes.
+
+## Publishing
+
+Published as `@webclaw/sdk`, `files: ["dist"]` only. `package-lock.json` **is**
+tracked deliberately (deterministic CI + contributor parity). `.npmrc` is
+gitignored and reads `NPM_TOKEN` from the environment. Bump `package.json`
+version in the release commit (`chore: release X.Y.Z`) — there is no automated
+version/publish workflow.
 
 ## Security Notes
 
