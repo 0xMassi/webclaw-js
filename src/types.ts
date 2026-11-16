@@ -69,6 +69,12 @@ export interface YouTubeData {
   language: string | null;
 }
 
+export interface ActionResult {
+  action: string;
+  success: boolean;
+  error?: string;
+}
+
 export interface ScrapeResponse {
   url: string;
   metadata: PageMetadata;
@@ -87,7 +93,7 @@ export interface ScrapeResponse {
   attributes?: Array<{ selector: string; attribute: string; values: string[] }>;
   query_answer?: string | null;
   screenshot?: string;
-  actions_performed?: number;
+  actions_performed?: ActionResult[];
   mobile?: boolean;
   structured_data?: unknown;
   engine?: Record<string, unknown>;
