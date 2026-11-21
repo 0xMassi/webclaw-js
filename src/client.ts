@@ -505,8 +505,6 @@ export class Webclaw {
     }
 
     if (res.ok) {
-      // 204, or any other success with an empty body (some endpoints
-      // reply 200/202 with no content). Don't try to parse "" as JSON.
       const text = await res.text();
       if (text.length === 0) {
         return undefined as T;
@@ -527,16 +525,25 @@ export class Webclaw {
       body ??
       res.statusText;
 
-    if (res.status === 401) throw new AuthenticationError(message);
-    if (res.status === 402) throw new CreditLimitError(message);
-    if (res.status === 403) throw new ScopeError(message);
-    if (res.status === 404) throw new NotFoundError(message);
-    if (res.status === 429) {
-      const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
-      throw new RateLimitError(retryAfter);
-    }
+    const err =
+      res.status === 401 ? new AuthenticationError(message)
+      : res.status === 402 ? new CreditLimitError(message)
+      : res.status === 403 ? new ScopeError(message)
+      : res.status === 404 ? new NotFoundError(message)
+      : res.status === 429 ? new RateLimitError(parseRetryAfter(res.headers.get("retry-after")))
+      : new WebclawError(message, res.status, parsed ?? body);
 
-    throw new WebclawError(message, res.status, parsed ?? body);
+    const bodyId =
+      parsed && typeof parsed === "object" && "request_id" in parsed
+        ? (parsed as { request_id: unknown }).request_id
+        : undefined;
+    const requestId =
+      res.headers.get("x-request-id") || (typeof bodyId === "string" && bodyId) || undefined;
+    if (requestId) {
+      err.requestId = requestId;
+      err.message = `${err.message} (request id: ${requestId})`;
+    }
+    throw err;
   }
 
   private post<T>(

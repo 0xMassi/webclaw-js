@@ -513,6 +513,16 @@ try {
 }
 ```
 
+API errors carry `err.requestId` when the server assigned one (from the `x-request-id` header, or `request_id` in the error body). It is also appended to `err.message` as `(request id: ...)`. Log it and quote it when contacting support. Early rejections (400 validation, 401, 429) may have none, in which case it is `undefined`.
+
+```typescript
+} catch (err) {
+  if (err instanceof WebclawError) {
+    console.error(err.status, err.requestId, err.message);
+  }
+}
+```
+
 ## Configuration
 
 ```typescript

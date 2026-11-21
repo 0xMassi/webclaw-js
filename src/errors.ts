@@ -4,6 +4,9 @@
  */
 
 export class WebclawError extends Error {
+  /** Server request id from the `x-request-id` header or the error body's `request_id`, when the API returned one. Quote it when contacting support. */
+  public requestId?: string;
+
   constructor(
     message: string,
     public readonly status?: number,
