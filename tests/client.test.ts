@@ -354,6 +354,48 @@ describe("endpoints", () => {
   });
 });
 
+describe("error request id", () => {
+  it("reads the x-request-id header first", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(
+        { error: "boom", request_id: "body-id" },
+        500,
+        { "x-request-id": "hdr-id" },
+      ),
+    );
+    const err = await client().scrape({ url: "https://example.com" }).catch((e) => e);
+    expect(err).toBeInstanceOf(WebclawError);
+    expect(err.requestId).toBe("hdr-id");
+    expect(err.message).toBe("boom (request id: hdr-id)");
+  });
+
+  it("falls back to the body request_id", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "gone", request_id: "body-id" }, 404),
+    );
+    const err = await client().scrape({ url: "https://example.com" }).catch((e) => e);
+    expect(err).toBeInstanceOf(NotFoundError);
+    expect(err.requestId).toBe("body-id");
+    expect(err.message).toBe("gone (request id: body-id)");
+  });
+
+  it("carries it on RateLimitError from the header", async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ error: "slow down" }, 429, { "x-request-id": "rl-id" }),
+    );
+    const err = await client().scrape({ url: "https://example.com" }).catch((e) => e);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.requestId).toBe("rl-id");
+  });
+
+  it("is undefined when absent", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "invalid url" }, 400));
+    const err = await client().scrape({ url: "x" }).catch((e) => e);
+    expect(err.requestId).toBeUndefined();
+    expect(err.message).toBe("invalid url");
+  });
+});
+
 // ---- POST /v1/batch ----
 
 describe("batch", () => {
